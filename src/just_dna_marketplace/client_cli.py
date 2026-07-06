@@ -11,10 +11,13 @@ from pathlib import Path
 from typing import Optional
 
 import typer
+from dotenv import load_dotenv
 from just_dna_format.identity import parse_version
 from just_dna_format.manifest import read_manifest
 
 from just_dna_marketplace.client import MarketplaceClient, MarketplaceError
+
+load_dotenv()  # pick up MARKETPLACE_URL / MARKETPLACE_TOKEN from a local .env
 
 app = typer.Typer(help="Marketplace test client", no_args_is_help=True)
 
