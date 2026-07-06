@@ -171,6 +171,25 @@ limiting (publish/download/search buckets, §7) — a simple in-memory token buc
 - **webui / Dagster consumer integration** (§11 — `marketplace://` source branch, catalog page) —
   lives in `just-dna-lite`, not this repo.
 
+### Namespace curation & moderation
+
+- **Featured namespaces** — an admin-set `featured` flag (on `namespaces`, or a `namespace_flags`
+  table) so the catalog can surface a curated front page / `?featured=true` filter / a "featured
+  first" sort. Purely additive to the projection.
+- **Blacklisted namespaces (hidden by default)** — a moderation flag that removes a namespace's
+  modules from default `GET /modules` listings and search; they are returned **only when directly
+  requested** (e.g. explicit `GET /modules/{ns}/{name}` or an opt-in `?include_blacklisted=true` /
+  `?namespace=<ns>`). Distinct from yank (which is per-version); this hides an entire namespace
+  without deleting it. For spam/abuse.
+- **Server-side hard removal (ops-only, not the API, not yank)** — an admin CLI
+  (`marketplace remove-namespace <ns>` / `remove-module <ns>/<name>`) that **purges** DB rows
+  (versions, `version_genes`/`version_categories`, modules, namespace ownership) **and** the stored
+  artifacts, so the namespace is fully **reclaimable**: a new key can take it and re-submit with old
+  versions gone for good. This is the deliberate escape hatch from version immutability — kept off
+  the public API (ops/console only), for abandonment, abuse cleanup, and namespace reclaim. Must
+  ensure nothing resurfaces: clear storage keys under `{ns}/…`, drop facet rows, and free the
+  `(namespace, name)` uniqueness so resubmission starts clean.
+
 ---
 
 ## Verification
