@@ -21,8 +21,10 @@ CREATE TABLE IF NOT EXISTS api_keys (
 );
 
 CREATE TABLE IF NOT EXISTS namespaces (
-    name       TEXT PRIMARY KEY,
-    account_id INTEGER NOT NULL REFERENCES accounts(id)
+    name        TEXT PRIMARY KEY,
+    account_id  INTEGER NOT NULL REFERENCES accounts(id),
+    featured    INTEGER NOT NULL DEFAULT 0,
+    blacklisted INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS modules (
@@ -91,11 +93,17 @@ def init_db(conn: sqlite3.Connection) -> None:
 
 def _migrate(conn: sqlite3.Connection) -> None:
     """Idempotent, additive migrations for existing DBs (the live catalog has data)."""
-    cols = {row["name"] for row in conn.execute("PRAGMA table_info(accounts)").fetchall()}
-    if "install_id" not in cols:
+    acct_cols = {row["name"] for row in conn.execute("PRAGMA table_info(accounts)").fetchall()}
+    if "install_id" not in acct_cols:
         conn.execute("ALTER TABLE accounts ADD COLUMN install_id TEXT")
     # One account per install-id (NULLs — admin-created accounts — are exempt).
     conn.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_install_id "
         "ON accounts(install_id) WHERE install_id IS NOT NULL"
     )
+
+    ns_cols = {row["name"] for row in conn.execute("PRAGMA table_info(namespaces)").fetchall()}
+    if "featured" not in ns_cols:
+        conn.execute("ALTER TABLE namespaces ADD COLUMN featured INTEGER NOT NULL DEFAULT 0")
+    if "blacklisted" not in ns_cols:
+        conn.execute("ALTER TABLE namespaces ADD COLUMN blacklisted INTEGER NOT NULL DEFAULT 0")

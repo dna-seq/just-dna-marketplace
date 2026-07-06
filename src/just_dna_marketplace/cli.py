@@ -92,5 +92,56 @@ def remove_namespace(namespace: str, yes: bool = typer.Option(False, "--yes", "-
     )
 
 
+def _set_flag(namespace: str, *, featured=None, blacklisted=None) -> None:
+    settings = get_settings()
+    repo = Repository(connect(settings.db_path))
+    if not repo.set_namespace_flags(namespace, featured=featured, blacklisted=blacklisted):
+        typer.echo(f"namespace not found: {namespace}")
+        raise typer.Exit(code=1)
+    typer.echo(f"{namespace}: featured={featured} blacklisted={blacklisted}")
+
+
+@app.command()
+def feature(namespace: str) -> None:
+    """Mark a namespace featured (floats to the top of listings)."""
+    _set_flag(namespace, featured=True)
+
+
+@app.command()
+def unfeature(namespace: str) -> None:
+    """Clear a namespace's featured flag."""
+    _set_flag(namespace, featured=False)
+
+
+@app.command()
+def blacklist(namespace: str) -> None:
+    """Hide a namespace from default listings/search (still reachable by direct request)."""
+    _set_flag(namespace, blacklisted=True)
+
+
+@app.command()
+def unblacklist(namespace: str) -> None:
+    """Un-hide a blacklisted namespace."""
+    _set_flag(namespace, blacklisted=False)
+
+
+@app.command("revoke-key")
+def revoke_key(key: str) -> None:
+    """Invalidate a single API key (e.g. a leaked one)."""
+    settings = get_settings()
+    repo = Repository(connect(settings.db_path))
+    typer.echo("revoked" if repo.revoke_api_key(key) else "no such key")
+
+
+@app.command("revoke-account")
+def revoke_account(account: str, yes: bool = typer.Option(False, "--yes", "-y")) -> None:
+    """Invalidate ALL API keys for an account."""
+    settings = get_settings()
+    repo = Repository(connect(settings.db_path))
+    if not yes:
+        typer.confirm(f"Revoke all API keys for account {account!r}?", abort=True)
+    typer.echo(f"revoked {repo.revoke_api_keys_for_account(account)} key(s)")
+
+
 if __name__ == "__main__":
     app()

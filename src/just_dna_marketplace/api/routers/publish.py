@@ -17,6 +17,7 @@ from just_dna_marketplace.api.deps import (
     Account,
     get_repo,
     get_storage,
+    rate_limit,
     settings_dep,
     require_account,
     require_namespace_member,
@@ -38,7 +39,11 @@ class YankRequest(BaseModel):
     yanked: bool = True
 
 
-@router.post("/{namespace}/{name}/versions", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/{namespace}/{name}/versions",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(rate_limit("publish"))],
+)
 async def publish(
     repo: RepoDep,
     storage: StorageDep,
@@ -78,7 +83,11 @@ async def publish(
     return manifest.model_dump()
 
 
-@router.post("/{namespace}/{name}/versions/import", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/{namespace}/{name}/versions/import",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(rate_limit("publish"))],
+)
 async def import_archive(
     repo: RepoDep,
     storage: StorageDep,

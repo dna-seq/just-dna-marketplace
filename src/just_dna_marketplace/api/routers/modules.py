@@ -16,6 +16,7 @@ from just_dna_marketplace.api.deps import (
     get_repo,
     get_storage,
     pagination,
+    rate_limit,
     settings_dep,
 )
 from just_dna_marketplace.config import Settings
@@ -44,7 +45,7 @@ class DigestLookup(BaseModel):
     digests: list[str]
 
 
-@router.get("", response_model=Page[ModuleCard])
+@router.get("", response_model=Page[ModuleCard], dependencies=[Depends(rate_limit("search"))])
 def list_modules(
     repo: RepoDep,
     page: PageDep,
@@ -54,6 +55,9 @@ def list_modules(
     genome_build: Optional[str] = None,
     owner: Optional[str] = None,
     license: Optional[str] = None,
+    namespace: Optional[str] = None,
+    featured: Optional[bool] = None,
+    include_blacklisted: bool = False,
     sort: str = Query("name", pattern="^(downloads|recent|name)$"),
 ) -> Page[ModuleCard]:
     return catalog.list_modules(
@@ -66,6 +70,9 @@ def list_modules(
         genome_build=genome_build,
         owner=owner,
         license=license,
+        namespace=namespace,
+        featured=featured,
+        include_blacklisted=include_blacklisted,
         sort=sort,
     )
 
@@ -182,7 +189,10 @@ def _build_tarball(storage: StorageBackend, key: str, manifest: ModuleManifest) 
     return buf.getvalue()
 
 
-@router.get("/{namespace}/{name}/versions/{version}/download")
+@router.get(
+    "/{namespace}/{name}/versions/{version}/download",
+    dependencies=[Depends(rate_limit("download"))],
+)
 def download(
     repo: RepoDep,
     storage: StorageDep,

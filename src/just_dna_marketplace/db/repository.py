@@ -56,6 +56,11 @@ class Repository:
             "SELECT account_id FROM namespaces WHERE name = ?", (namespace,)
         ).fetchone()
 
+    def namespace_flags(self, namespace: str) -> Optional[sqlite3.Row]:
+        return self.conn.execute(
+            "SELECT featured, blacklisted FROM namespaces WHERE name = ?", (namespace,)
+        ).fetchone()
+
     def count_namespaces_for_account(self, account_id: int) -> int:
         row = self.conn.execute(
             "SELECT count(*) AS n FROM namespaces WHERE account_id = ?", (account_id,)
@@ -255,13 +260,28 @@ class Repository:
         genome_build: Optional[str] = None,
         owner: Optional[str] = None,
         license: Optional[str] = None,
+        namespace: Optional[str] = None,
+        featured: Optional[bool] = None,
+        include_blacklisted: bool = False,
         sort: str = "name",
         limit: int = 20,
         offset: int = 0,
     ) -> tuple[list[sqlite3.Row], int]:
-        """Return (rows, total). Only modules with a current (non-yanked) latest are listed."""
+        """Return (rows, total). Only modules with a current (non-yanked) latest are listed.
+
+        Blacklisted namespaces are hidden unless `include_blacklisted` or a specific `namespace`
+        filter is given. `featured` modules float to the top of every sort; `featured=True`
+        restricts to them. Each row carries `featured`/`blacklisted` (from the namespaces table).
+        """
         where: list[str] = ["m.latest_version IS NOT NULL"]
         params: list[Any] = []
+        if not include_blacklisted and namespace is None:
+            where.append("COALESCE(n.blacklisted, 0) = 0")
+        if namespace:
+            where.append("m.namespace = ?")
+            params.append(namespace)
+        if featured:
+            where.append("COALESCE(n.featured, 0) = 1")
         if q:
             where.append("(m.title LIKE ? OR m.description LIKE ?)")
             params.extend([f"%{q}%", f"%{q}%"])
@@ -291,13 +311,51 @@ class Repository:
 
         clause = " AND ".join(where)
         order = _SORT_SQL.get(sort, _SORT_SQL["name"])
+        join = "LEFT JOIN namespaces n ON n.name = m.namespace"
         total = int(
             self.conn.execute(
-                f"SELECT COUNT(*) AS n FROM modules m WHERE {clause}", params
+                f"SELECT COUNT(*) AS n FROM modules m {join} WHERE {clause}", params
             ).fetchone()["n"]
         )
         rows = self.conn.execute(
-            f"SELECT * FROM modules m WHERE {clause} ORDER BY {order} LIMIT ? OFFSET ?",
+            f"SELECT m.*, COALESCE(n.featured, 0) AS featured, "
+            f"COALESCE(n.blacklisted, 0) AS blacklisted FROM modules m {join} "
+            f"WHERE {clause} ORDER BY COALESCE(n.featured, 0) DESC, {order} LIMIT ? OFFSET ?",
             [*params, limit, offset],
         ).fetchall()
         return rows, total
+
+    # ── Moderation & key ops ────────────────────────────────────────────────
+
+    def set_namespace_flags(
+        self, namespace: str, *, featured: Optional[bool] = None, blacklisted: Optional[bool] = None
+    ) -> bool:
+        """Set featured/blacklisted on a namespace. Returns False if the namespace doesn't exist."""
+        sets, params = [], []
+        if featured is not None:
+            sets.append("featured = ?")
+            params.append(int(featured))
+        if blacklisted is not None:
+            sets.append("blacklisted = ?")
+            params.append(int(blacklisted))
+        if not sets:
+            return self.namespace_owner(namespace) is not None
+        params.append(namespace)
+        cur = self.conn.execute(
+            f"UPDATE namespaces SET {', '.join(sets)} WHERE name = ?", params
+        )
+        self.conn.commit()
+        return cur.rowcount > 0
+
+    def revoke_api_key(self, key: str) -> bool:
+        cur = self.conn.execute("DELETE FROM api_keys WHERE key = ?", (key,))
+        self.conn.commit()
+        return cur.rowcount > 0
+
+    def revoke_api_keys_for_account(self, name: str) -> int:
+        row = self.account_by_name(name)
+        if row is None:
+            return 0
+        cur = self.conn.execute("DELETE FROM api_keys WHERE account_id = ?", (row["id"],))
+        self.conn.commit()
+        return cur.rowcount

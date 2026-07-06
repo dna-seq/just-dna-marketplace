@@ -56,6 +56,12 @@ class Settings(BaseSettings):
     namespaces_per_account: int = 5
     lookup_batch_max: int = 256  # cap on digests per batch /modules/lookup
 
+    # Rate limiting (SPEC §7), per caller (API key or IP) × category. In-memory token buckets.
+    rate_limit_enabled: bool = True
+    rate_publish_per_hour: float = 10
+    rate_download_per_hour: float = 1000
+    rate_search_per_min: float = 60
+
     # Observability. `debug` turns on verbose structured logging to stdout (request tracing +
     # Eliot publish/import step logs + third-party DEBUG). Off = `log_level` (default INFO).
     debug: bool = False

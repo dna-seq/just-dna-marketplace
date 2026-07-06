@@ -79,3 +79,25 @@ def require_namespace_member(account: Account, namespace: str) -> None:
     """Raise 403 unless `account` owns `namespace`."""
     if namespace not in account.namespaces:
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="not_namespace_member")
+
+
+def _rate_identity(request: Request) -> str:
+    """Rate-limit key: the API key if present (first 16 chars), else the client IP."""
+    auth = request.headers.get("authorization", "")
+    if auth.lower().startswith("bearer "):
+        return "key:" + auth.split(" ", 1)[1].strip()[:16]
+    return "ip:" + (request.client.host if request.client else "unknown")
+
+
+def rate_limit(category: str):
+    """Dependency factory: enforce the token bucket for `category` (429 on exhaustion)."""
+
+    def _dep(request: Request) -> None:
+        limiter = request.app.state.rate_limiter
+        if not limiter.allow(_rate_identity(request), category):
+            raise HTTPException(
+                status.HTTP_429_TOO_MANY_REQUESTS, detail="rate_limited",
+                headers={"Retry-After": "60"},
+            )
+
+    return _dep

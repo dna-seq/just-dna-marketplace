@@ -17,6 +17,7 @@ from just_dna_marketplace.config import API_PREFIX, Settings, get_settings
 from just_dna_marketplace.db.repository import Repository
 from just_dna_marketplace.db.schema import connect, init_db
 from just_dna_marketplace.logging_setup import configure_logging
+from just_dna_marketplace.ratelimit import default_limiter
 from just_dna_marketplace.startup import validate_hf_access
 from just_dna_marketplace.storage.base import StorageBackend
 from just_dna_marketplace.storage.local import LocalStorage
@@ -45,6 +46,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     app.state.conn = conn
     app.state.repo = Repository(conn)
     app.state.storage = _build_storage(settings)
+    app.state.rate_limiter = default_limiter(settings)
 
     @app.middleware("http")
     async def _trace_requests(request: Request, call_next):

@@ -37,6 +37,7 @@ class ModuleCard(BaseModel):
     stats: CardStats
     downloads: int
     updated_at: str
+    featured: bool = False
 
 
 class VersionSummary(BaseModel):

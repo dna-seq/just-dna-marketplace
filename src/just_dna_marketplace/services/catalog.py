@@ -32,6 +32,13 @@ def _latest_manifest(repo: Repository, row: sqlite3.Row) -> Optional[ModuleManif
     return ModuleManifest.model_validate_json(raw) if raw else None
 
 
+def _featured(repo: Repository, row: sqlite3.Row) -> bool:
+    if "featured" in row.keys():  # search rows carry it (no extra query)
+        return bool(row["featured"])
+    flags = repo.namespace_flags(row["namespace"])
+    return bool(flags["featured"]) if flags else False
+
+
 def _card(repo: Repository, row: sqlite3.Row) -> ModuleCard:
     manifest = _latest_manifest(repo, row)
     stats = manifest.stats if manifest else None
@@ -56,6 +63,7 @@ def _card(repo: Repository, row: sqlite3.Row) -> ModuleCard:
         stats=card_stats,
         downloads=row["downloads"],
         updated_at=row["updated_at"],
+        featured=_featured(repo, row),
     )
 
 
