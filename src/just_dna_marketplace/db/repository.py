@@ -6,8 +6,8 @@ models. Everything is a projection of `manifest.json`, so ingest rebuilds rows f
 import sqlite3
 from typing import Any, Optional
 
-from just_dna_module.identity import latest as latest_version
-from just_dna_module.manifest import ModuleManifest
+from just_dna_format.identity import latest as latest_version
+from just_dna_format.manifest import ModuleManifest
 
 _SORT_SQL: dict[str, str] = {
     "downloads": "m.downloads DESC, m.name ASC",

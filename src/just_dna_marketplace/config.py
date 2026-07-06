@@ -33,6 +33,11 @@ class Settings(BaseSettings):
 
     # Server-side recompile (M4) pins one Ensembl reference across the ecosystem.
     ensembl_reference: str = "just-dna-seq/ensembl_variations"
+    # Whether the publish compile resolves rsid<->position via Ensembl. Off by default so a
+    # deployment without a reference cache still accepts specs that already carry positions;
+    # set on (with a cache via JUST_DNA_PIPELINES_CACHE_DIR / MARKETPLACE_ENSEMBL_CACHE) in prod.
+    resolve_with_ensembl: bool = False
+    ensembl_cache: Path | None = None
 
     # Pagination.
     default_per_page: int = 20

@@ -8,7 +8,7 @@ into the spec.
 
 | Area | Decision |
 |---|---|
-| Manifest contract | A new declarative mini-package **`just-dna-module`** (pure Pydantic + hashlib, no heavy deps) is the **single source of truth**, consumed by both `just-dna-pipelines` and this service. Prevents contract drift. |
+| Manifest contract | The **`just-dna-format`** workspace (repo `dna-seq/just-dna-format`) holds two packages: **`just-dna-format`** (pure Pydantic schema/contract — DSL spec + manifest + integrity + identity) and **`just-dna-compiler`** (the transform, + polars/duckdb). Single source of truth for `just-dna-pipelines` and this service; prevents drift, and keeps Dagster/LLM deps out of both. |
 | Artifact storage | **HuggingFace Hub** datasets via `HfFileSystem` (never `snapshot_download`). |
 | Publish trust model | **Server-side recompile** — publisher uploads the spec only; the server runs `compile_module()` and produces the trusted manifest/digests (§7). |
 | Auth | **Static API keys**; one account owns one namespace. JWTs, orgs, and membership are deferred. |
@@ -40,11 +40,11 @@ deferred.
 
 | # | Milestone | Scope | Status |
 |---|---|---|---|
-| **M0** | `just-dna-module` shared contract | Manifest models + integrity/versioning helpers (§4–§6). **Blocks all publish/verify.** | ✅ **done** — 31 tests |
-| **M1** | `just-dna-pipelines` integration | Emit `manifest.json` + hashes from `compile_module`; expose gene list; carry `.json` on install (§10 A2–A4). Upstream, additive. | ⏳ **deferred** (cross-repo) |
+| **M0** | `just-dna-format` shared contract | Schema (DSL spec + manifest + integrity + identity) + reference compiler, as a 2-package uv workspace (§4–§6). **Blocks all publish/verify.** | ✅ **done** — 44 tests |
+| **M1** | `just-dna-pipelines` integration | Repoint pipelines' `module_compiler` to `just-dna-compiler` (re-export shim), delete the duplicate, add `.json` on install (§10 A4). Cross-repo. | ⏳ **deferred** (cross-repo) |
 | **M2** | Service skeleton | Config, DB projection schema, storage backend interface, FastAPI app, `/health`, admin CLI. | ✅ **done** |
 | **M3** | Read / catalog API | Endpoints 1–4: list/search/facets, detail, versions, manifest (§8.1–§8.4). No auth. | ✅ **done** |
-| **M4** | Publish pipeline | API-key auth, publish init + finalize with server-side recompile → HF commit → index (§8.6–§8.7). | 🚧 **guards done; compile step 501** |
+| **M4** | Publish pipeline | API-key auth, multipart spec upload → server-side recompile (`just-dna-compiler`) → store → index (§8.6–§8.7). | ✅ **done** (local backend; HF commit pending) |
 | **M5** | Download + integrity | Download/files redirects + reference client verify-then-install (§5, §8.5). | ✅ **done** (local backend; HF redirect pending) |
 | **M6** | Yank + finish | Yank/un-yank, `whoami`, basic rate limiting (§6, §7, §8.8). | 🚧 **yank + whoami done; rate limiting pending** |
 
@@ -52,21 +52,27 @@ deferred.
 
 ### Current state (2026-07-06)
 
-A runnable, tested service skeleton is in place: **51 tests green** (31 in `just-dna-module`,
-20 here). The read/catalog API, download + integrity round-trip (local storage), API-key auth,
-`whoami`, and yank/un-yank all work end-to-end. What remains for a full MVP:
+The service now depends on the **published PyPI packages** `just-dna-format>=0.1.0` and
+`just-dna-compiler>=0.1.0` (no local path sources). **23 marketplace tests green.** Working
+end-to-end: read/catalog API, **publish via multipart spec upload → server-side recompile
+(`compile_module(..., compiled_by="marketplace-server")`) → version-scoped storage → index**,
+download + integrity round-trip, API-key auth, `whoami`, and yank/un-yank. Storage is
+version-scoped (`{ns}/{name}/{version}`) so per-version logs and manifests don't collide; the
+`artifact.digest` remains the integrity/content identity in the manifest.
 
-- **M1** (in `just-dna-lite/just-dna-pipelines`): make `compile_module()` emit `manifest.json` +
-  hashes and expose `genes: list[str]`. Cross-repo, deferred pending the go-ahead to edit it.
-- **M4 compile step**: `POST .../versions` runs all guards (auth `401`, ownership `403`,
-  `invalid_version` `422`, `version_exists` `409`) then returns **`501`** at the recompile step.
-  Wiring it needs `just-dna-pipelines` (M1) + an HF write token + a pinned Ensembl reference.
-- **`HfStorage`** backend (currently only `LocalStorage`) for the real `302` CDN redirects.
-- **Rate limiting** (M6).
+What remains for a full MVP:
+
+- **M1** (in `just-dna-lite/just-dna-pipelines`): repoint its `module_compiler` to
+  `just-dna-compiler` (re-export shim + delete the duplicate) and add `.json` to `_SPEC_SUFFIXES`
+  (§10 A4). Cross-repo, deferred pending the go-ahead to edit it.
+- **Ensembl at publish**: `resolve_with_ensembl` defaults **off** (specs must carry positions);
+  turn on in prod with a reference cache via `JUST_DNA_PIPELINES_CACHE_DIR` / `MARKETPLACE_ENSEMBL_CACHE`.
+- **`HfStorage`** backend (currently only `LocalStorage`) for real `302` CDN redirects + HF commit.
+- **Serving `logs`** over the API + cross-version provenance aggregation; **rate limiting** (M6).
 
 Run it: `uv run marketplace serve` · issue a key: `uv run marketplace issue-key <acct> -n <ns>`.
 
-### M0 — `just-dna-module` shared contract package
+### M0 — `just-dna-format` shared contract package
 
 Minimal package, Python ≥3.13, deps: `pydantic` + stdlib only.
 
@@ -92,7 +98,7 @@ Minimal package, Python ≥3.13, deps: `pydantic` + stdlib only.
 
 ### M2 — marketplace service skeleton (this repo)
 
-- **Deps** (`uv add`): `just-dna-module`, `just-dna-pipelines` (path/workspace), a DB layer (SQLite),
+- **Deps** (`uv add`): `just-dna-format`, `just-dna-pipelines` (path/workspace), a DB layer (SQLite),
   `huggingface-hub`, `eliot`, `python-dotenv`. Drop `polars-bio` from direct deps unless the API
   reads parquet directly (stats come from the manifest).
 - **Config** (Pydantic settings): HF dataset repo id + write token, pinned Ensembl reference, SQLite
@@ -135,7 +141,7 @@ response models.
 `GET .../versions/{v}/download` → `302` to the HF `resolve` URL for the module tarball;
 `?format=files` → per-file `{name,url,sha256,size}`. `GET .../versions/{v}/files/{file}` → redirect
 to the HF file URL. Increment the `downloads` counter. Ship a reference client verify-then-install
-built on `just_dna_module.verify_manifest` (also the seed for the future webui `marketplace://`
+built on `just_dna_format.verify_manifest` (also the seed for the future webui `marketplace://`
 source).
 
 ### M6 — yank + finish
@@ -163,7 +169,7 @@ limiting (publish/download/search buckets, §7) — a simple in-memory token buc
 
 ## Verification
 
-- **M0:** `pytest -vvv` on `just-dna-module` — digest order-independence/stability,
+- **M0:** `pytest -vvv` on `just-dna-format` — digest order-independence/stability,
   tamper → verify-fail, fixture round-trip (§13).
 - **M1:** unit-test `compile_module` emits `manifest.json` with `inputs[].sha256` matching
   `hashlib.sha256` of the source CSVs, non-empty `artifact.files[]`, `compile_success=true`,

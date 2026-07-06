@@ -7,7 +7,7 @@ manifest produced by the server-side compile can be indexed with one call.
 
 from datetime import datetime, timezone
 
-from just_dna_module.manifest import ModuleManifest
+from just_dna_format.manifest import ModuleManifest
 
 from just_dna_marketplace.db.repository import Repository
 

@@ -28,7 +28,7 @@ uv run marketplace issue-key antonkulaga -n just-dna-seq   # mint an API key for
 - **Read/catalog API** — list + search (`?q`, `?gene`, `?category`, `?genome_build`, `?owner`,
   `?license`, `?sort`), module detail, versions, manifest (SPEC §8.1–§8.4).
 - **Download + integrity** — per-file descriptors with SHA-256, byte serving, and a
-  verify-then-install round-trip via `just_dna_module.verify_manifest` (SPEC §5).
+  verify-then-install round-trip via `just_dna_format.verify_manifest` (SPEC §5).
 - **Auth** — static API keys; `whoami`; namespace ownership gate on publish (SPEC §8.8).
 - **Yank / un-yank** — unlist a version while keeping its artifact fetchable (SPEC §6).
 
@@ -39,7 +39,7 @@ Publishing runs all its guards but stops at the server-side recompile step (`501
 
 The `manifest.json` of each version is the **source of truth**; the SQLite catalog is a rebuildable
 projection of it. The manifest contract and integrity primitives live in the shared, dependency-light
-[`just-dna-module`](../just-dna-module) package so this service and the compiler never drift.
+[`just-dna-format`](../just-dna-format) package so this service and the compiler never drift.
 
 ```
 src/just_dna_marketplace/

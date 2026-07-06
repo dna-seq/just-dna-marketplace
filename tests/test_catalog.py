@@ -4,8 +4,8 @@ from typing import Callable
 
 import pytest
 from fastapi.testclient import TestClient
-from just_dna_module.integrity import IntegrityError, verify_manifest
-from just_dna_module.manifest import ModuleManifest
+from just_dna_format.integrity import IntegrityError, verify_manifest
+from just_dna_format.manifest import ModuleManifest
 
 
 @pytest.fixture

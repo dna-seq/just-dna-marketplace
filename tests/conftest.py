@@ -5,9 +5,9 @@ from typing import Callable
 
 import pytest
 from fastapi.testclient import TestClient
-from just_dna_module.identity import canonical_id
-from just_dna_module.integrity import artifact_digest
-from just_dna_module.manifest import (
+from just_dna_format.identity import canonical_id
+from just_dna_format.integrity import artifact_digest
+from just_dna_format.manifest import (
     Artifact,
     Compilation,
     Display,
@@ -16,12 +16,13 @@ from just_dna_module.manifest import (
     ModuleManifest,
     Stats,
 )
-from just_dna_module.integrity import sha256_bytes
+from just_dna_format.integrity import sha256_bytes
 
 from just_dna_marketplace.api.app import create_app
 from just_dna_marketplace.config import Settings
 from just_dna_marketplace.db.repository import Repository
 from just_dna_marketplace.services.ingest import ingest_manifest
+from just_dna_marketplace.storage.base import version_key
 
 # One shared artifact payload; content differs per module so digests differ.
 _ARTIFACT_FILES = ("weights.parquet", "annotations.parquet", "studies.parquet")
@@ -114,7 +115,7 @@ def seed(app) -> Callable[..., ModuleManifest]:
         manifest, files = _make_manifest(
             namespace, name, version, genes=genes, categories=categories, **kwargs  # type: ignore[arg-type]
         )
-        app.state.storage.store_module(manifest.artifact.digest, files)
+        app.state.storage.store_module(version_key(namespace, name, version), files)
         ingest_manifest(app.state.repo, manifest, created_at=created_at)
         return manifest
 

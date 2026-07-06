@@ -11,7 +11,7 @@ from just_dna_marketplace.api.deps import Pagination, get_repo, get_storage, pag
 from just_dna_marketplace.db.repository import Repository
 from just_dna_marketplace.models.api import ModuleCard, ModuleDetail, Page, VersionSummary
 from just_dna_marketplace.services import catalog
-from just_dna_marketplace.storage.base import StorageBackend
+from just_dna_marketplace.storage.base import StorageBackend, version_key
 
 router = APIRouter(prefix="/modules", tags=["catalog"])
 
@@ -90,10 +90,11 @@ def get_file(
     if file not in {f.name for f in manifest.artifact.files}:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="file_not_found")
 
-    external = storage.file_url(manifest.artifact.digest, file)
+    key = version_key(namespace, name, version)
+    external = storage.file_url(key, file)
     if external is not None:
         return RedirectResponse(external, status_code=status.HTTP_302_FOUND)
-    data = storage.read_file(manifest.artifact.digest, file)
+    data = storage.read_file(key, file)
     return Response(content=data, media_type="application/octet-stream")
 
 
@@ -114,11 +115,12 @@ def download(
     if manifest is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="version_not_found")
     repo.increment_downloads(namespace, name)
+    key = version_key(namespace, name, version)
     base = f"/api/v1/modules/{namespace}/{name}/versions/{version}/files"
     files = [
         {
             "name": f.name,
-            "url": storage.file_url(manifest.artifact.digest, f.name) or f"{base}/{f.name}",
+            "url": storage.file_url(key, f.name) or f"{base}/{f.name}",
             "sha256": f.sha256,
             "size": f.size,
         }

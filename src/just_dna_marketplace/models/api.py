@@ -5,7 +5,7 @@ catalog's card/detail/version shapes, projected from stored manifests.
 
 from typing import Generic, Optional, TypeVar
 
-from just_dna_module.manifest import ModuleManifest
+from just_dna_format.manifest import ModuleManifest
 from pydantic import BaseModel, Field
 
 T = TypeVar("T")

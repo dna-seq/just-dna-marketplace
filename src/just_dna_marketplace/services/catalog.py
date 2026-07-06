@@ -6,7 +6,7 @@ Card stats are pulled from each module's latest-version manifest (the source of 
 import sqlite3
 from typing import Optional
 
-from just_dna_module.manifest import ModuleManifest
+from just_dna_format.manifest import ModuleManifest
 
 from just_dna_marketplace.config import API_PREFIX
 from just_dna_marketplace.db.repository import Repository

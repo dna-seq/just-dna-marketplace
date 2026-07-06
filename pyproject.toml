@@ -12,15 +12,14 @@ dependencies = [
     "eliot>=1.17.5",
     "typer>=0.26.8",
     "uvicorn>=0.34.0",
-    "just-dna-module",
+    "python-multipart>=0.0.9",
+    "just-dna-format>=0.1.0",
+    "just-dna-compiler>=0.1.0",
 ]
 
 [build-system]
 requires = ["uv-build"]
 build-backend = "uv_build"
-
-[tool.uv.sources]
-just-dna-module = { path = "../just-dna-module", editable = true }
 
 [project.scripts]
 marketplace = "just_dna_marketplace.cli:app"
