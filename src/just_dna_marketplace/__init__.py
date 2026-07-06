@@ -20,3 +20,7 @@ from just_dna_marketplace.client import (  # noqa: F401  (public re-exports)
     MarketplaceError,
     gather_spec_files,
 )
+from just_dna_marketplace.installid import (  # noqa: F401
+    generate_install_id,
+    validate_install_id,
+)

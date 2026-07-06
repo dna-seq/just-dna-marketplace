@@ -83,6 +83,19 @@ def connect(db_path: Path) -> sqlite3.Connection:
 
 
 def init_db(conn: sqlite3.Connection) -> None:
-    """Create tables if they do not exist."""
+    """Create tables if they do not exist, then run lightweight column migrations."""
     conn.executescript(SCHEMA)
+    _migrate(conn)
     conn.commit()
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Idempotent, additive migrations for existing DBs (the live catalog has data)."""
+    cols = {row["name"] for row in conn.execute("PRAGMA table_info(accounts)").fetchall()}
+    if "install_id" not in cols:
+        conn.execute("ALTER TABLE accounts ADD COLUMN install_id TEXT")
+    # One account per install-id (NULLs — admin-created accounts — are exempt).
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_install_id "
+        "ON accounts(install_id) WHERE install_id IS NOT NULL"
+    )

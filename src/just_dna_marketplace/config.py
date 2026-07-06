@@ -48,6 +48,14 @@ class Settings(BaseSettings):
     default_per_page: int = 20
     max_per_page: int = 100
 
+    # Community self-service onboarding (0.3). Accounts register with an install-id (proof-of-work,
+    # see installid.py) and may claim up to `namespaces_per_account` namespaces. Community-first:
+    # self-register is on by default; the install-id PoW deters random spambots, not determined ones.
+    allow_self_register: bool = True
+    install_id_difficulty: int = 20
+    namespaces_per_account: int = 5
+    lookup_batch_max: int = 256  # cap on digests per batch /modules/lookup
+
     # Observability. `debug` turns on verbose structured logging to stdout (request tracing +
     # Eliot publish/import step logs + third-party DEBUG). Off = `log_level` (default INFO).
     debug: bool = False

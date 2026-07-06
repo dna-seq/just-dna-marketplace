@@ -1,6 +1,6 @@
 [project]
 name = "just-dna-marketplace"
-version = "0.2.1"
+version = "0.3.0"
 description = "Reference client (and optional server) for the just-dna annotation module marketplace"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -28,6 +28,12 @@ server = [
 [build-system]
 requires = ["uv-build"]
 build-backend = "uv_build"
+
+# Defensive: never let secrets / editor junk into the sdist or wheel, regardless of what the
+# default inclusion picks up. (The default already ships only src/ + metadata.)
+[tool.uv.build-backend]
+source-exclude = [".env", ".env.*", "*.swp", "*.swo", "*.swn", ".*.swp"]
+wheel-exclude = [".env", ".env.*", "*.swp", "*.swo", "*.swn", ".*.swp"]
 
 [project.scripts]
 # Client CLI works on the default install; the server admin CLI needs the `server` extra.

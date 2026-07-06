@@ -220,3 +220,10 @@ __marimo__/
 
 # Marketplace runtime state (catalog DB + local artifact store)
 /data/
+
+# Editor swap/backup files
+*.swp
+*.swo
+*.swn
+.*.swp
+*~

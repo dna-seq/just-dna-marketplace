@@ -9,8 +9,16 @@ from typing import Annotated, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse
 from just_dna_format.manifest import ModuleManifest
+from pydantic import BaseModel
 
-from just_dna_marketplace.api.deps import Pagination, get_repo, get_storage, pagination
+from just_dna_marketplace.api.deps import (
+    Pagination,
+    get_repo,
+    get_storage,
+    pagination,
+    settings_dep,
+)
+from just_dna_marketplace.config import Settings
 from just_dna_marketplace.db.repository import Repository
 from just_dna_marketplace.models.api import ModuleCard, ModuleDetail, Page, VersionSummary
 from just_dna_marketplace.services import catalog
@@ -20,7 +28,20 @@ router = APIRouter(prefix="/modules", tags=["catalog"])
 
 RepoDep = Annotated[Repository, Depends(get_repo)]
 StorageDep = Annotated[StorageBackend, Depends(get_storage)]
+SettingsDep = Annotated[Settings, Depends(settings_dep)]
 PageDep = Annotated[Pagination, Depends(pagination)]
+
+
+def _digest_matches(repo: Repository, digest: str) -> list[dict]:
+    return [
+        {"namespace": r["namespace"], "name": r["name"], "version": r["version"],
+         "yanked": bool(r["yanked"])}
+        for r in repo.find_versions_by_digest(digest)
+    ]
+
+
+class DigestLookup(BaseModel):
+    digests: list[str]
 
 
 @router.get("", response_model=Page[ModuleCard])
@@ -56,19 +77,15 @@ def lookup_by_digest(repo: RepoDep, digest: str) -> dict:
     Lets a publisher check whether an already-compiled module is on the marketplace before
     re-uploading. Returns `{matches: [{namespace, name, version, yanked}]}` (empty if none).
     """
-    rows = repo.find_versions_by_digest(digest)
-    return {
-        "digest": digest,
-        "matches": [
-            {
-                "namespace": r["namespace"],
-                "name": r["name"],
-                "version": r["version"],
-                "yanked": bool(r["yanked"]),
-            }
-            for r in rows
-        ],
-    }
+    return {"digest": digest, "matches": _digest_matches(repo, digest)}
+
+
+@router.post("/lookup")
+def lookup_batch(repo: RepoDep, settings: SettingsDep, body: DigestLookup) -> dict:
+    """Batch variant of digest lookup — classify many local modules in one request (capped at
+    `lookup_batch_max`). `{results: [{digest, matches: [...] }]}`."""
+    digests = body.digests[: settings.lookup_batch_max]
+    return {"results": [{"digest": d, "matches": _digest_matches(repo, d)} for d in digests]}
 
 
 @router.get("/{namespace}/{name}", response_model=ModuleDetail)

@@ -34,6 +34,34 @@ class Repository:
         row = self.conn.execute("SELECT id FROM accounts WHERE name = ?", (name,)).fetchone()
         return int(row["id"])
 
+    def create_account_with_install_id(self, name: str, install_id: str) -> int:
+        cur = self.conn.execute(
+            "INSERT INTO accounts(name, install_id) VALUES (?, ?)", (name, install_id)
+        )
+        self.conn.commit()
+        return int(cur.lastrowid)
+
+    def account_by_install_id(self, install_id: str) -> Optional[sqlite3.Row]:
+        return self.conn.execute(
+            "SELECT id, name, install_id FROM accounts WHERE install_id = ?", (install_id,)
+        ).fetchone()
+
+    def account_by_name(self, name: str) -> Optional[sqlite3.Row]:
+        return self.conn.execute(
+            "SELECT id, name, install_id FROM accounts WHERE name = ?", (name,)
+        ).fetchone()
+
+    def namespace_owner(self, namespace: str) -> Optional[sqlite3.Row]:
+        return self.conn.execute(
+            "SELECT account_id FROM namespaces WHERE name = ?", (namespace,)
+        ).fetchone()
+
+    def count_namespaces_for_account(self, account_id: int) -> int:
+        row = self.conn.execute(
+            "SELECT count(*) AS n FROM namespaces WHERE account_id = ?", (account_id,)
+        ).fetchone()
+        return int(row["n"])
+
     def add_api_key(self, key: str, account_id: int) -> None:
         self.conn.execute(
             "INSERT OR REPLACE INTO api_keys(key, account_id) VALUES (?, ?)",

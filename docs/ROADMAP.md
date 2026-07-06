@@ -50,7 +50,37 @@ deferred.
 
 **Dependency order:** M0 → M1 → M2 → M3 / M4 (M4 needs M0+M1+M2) → M5 → M6.
 
-### Current state (2026-07-07) — v0.2.0, live
+## 0.3 — community-first onboarding (shipped)
+
+Goal: publishing from the just-dna-lite UI **without leaving the app**, community-foster over
+security. Bootstrapping a publisher is now self-service, gated by a lightweight anti-spambot
+proof-of-work rather than admin issuance.
+
+- ✅ **Install-id (proof-of-work).** The lite app mints an install-id once at first run:
+  `jdi1_<random>_<nonce>` whose SHA-256 has ≥ `install_id_difficulty` (default 20) leading zero
+  bits (`installid.generate_install_id` / `validate_install_id`, shared in the base package).
+  Open-source ⇒ not malpractice-resistant, but deters random/bulk AI-spambot ids; verify is O(1).
+- ✅ **Self-registration.** `POST /api/v1/auth/register {install_id, account}` validates the PoW and
+  mints an account + API key (one account per install-id; re-register re-issues a key). Gated by
+  `allow_self_register` (default on).
+- ✅ **Namespace claim, tied to install-id.** `GET /api/v1/namespaces/{ns}` (availability) +
+  `POST /api/v1/namespaces {namespace}` (claim). Each account may hold up to
+  `namespaces_per_account` (default **5**); over that → `403 namespace_limit_reached`, taken →
+  `409 namespace_taken`.
+- ✅ **Provenance without a spec change.** Downloaded vs custom is read from `manifest.json`
+  (`compilation.compiled_by == "marketplace-server"` + `identity`); the client **stamps** the
+  published manifest back into the local spec dir so "published-by-me" is self-marked. Batch
+  `POST /api/v1/modules/lookup {digests:[...]}` classifies many local modules in one request
+  (digests are already in each manifest — no client hashing, one indexed query). **The DSL
+  `module_spec.yaml` is deliberately not changed** — provenance lives in the manifest (its layer).
+- ✅ **Client + CLI:** `MarketplaceClient.register/namespace_available/claim_namespace/lookup_by_digests`;
+  `marketplace-client register|namespace-available|claim-namespace`; `generate_install_id` exported.
+
+DB: `accounts.install_id` (unique, nullable — admin keys exempt) added via an idempotent migration
+so the live catalog upgrades in place. Still deferred: expiring JWTs / OAuth, org membership, and
+true abuse-resistance (the PoW is a deterrent, not a wall).
+
+### Current state (2026-07-07) — v0.3.0, live
 
 **Live** at <https://module-marketplace.just-dna.life>. Depends on the published PyPI packages
 `just-dna-format>=0.1.0` + `just-dna-compiler>=0.1.0`. **39 tests green**; full integration run

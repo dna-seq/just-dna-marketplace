@@ -105,6 +105,26 @@ class MarketplaceClient:
     def lookup_by_digest(self, digest: str) -> list[dict]:
         return self._json(self._http.get("/modules/lookup", params={"digest": digest}))["matches"]
 
+    def lookup_by_digests(self, digests: list[str]) -> dict[str, list[dict]]:
+        """Batch digest lookup → `{digest: matches}`. Classify many local modules in one request."""
+        results = self._json(self._http.post("/modules/lookup", json={"digests": digests}))["results"]
+        return {r["digest"]: r["matches"] for r in results}
+
+    # ── Onboarding (community self-service) ──────────────────────────────────
+
+    def register(self, install_id: str, account: str) -> dict:
+        """Register an install-id → `{token, account, namespaces}`. No auth (mints the token)."""
+        return self._json(
+            self._http.post("/auth/register", json={"install_id": install_id, "account": account})
+        )
+
+    def namespace_available(self, namespace: str) -> dict:
+        return self._json(self._http.get(f"/namespaces/{namespace}"))
+
+    def claim_namespace(self, namespace: str) -> dict:
+        """Claim an available namespace for the token's account (bearer)."""
+        return self._json(self._http.post("/namespaces", json={"namespace": namespace}))
+
     def _fetch_file(self, namespace: str, name: str, version: str, rel: str) -> bytes:
         resp = self._http.get(f"/modules/{namespace}/{name}/versions/{version}/files/{rel}")
         if resp.status_code >= 400:

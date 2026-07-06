@@ -67,6 +67,10 @@ Publish/import `422.error` codes: `missing_spec_files`, `invalid_spec` (carries
 | 11 | POST | `/api/v1/modules/{ns}/{name}/versions/import` | bearer | Publish from zip/tar.gz archive |
 | 12 | POST | `/api/v1/modules/{ns}/{name}/versions/{v}/yank` | bearer | Yank / un-yank a version |
 | 13 | GET | `/api/v1/auth/whoami` | bearer | Identity + owned namespaces |
+| 14 | POST | `/api/v1/auth/register` | install-id | Self-register → account + API key |
+| 15 | GET | `/api/v1/namespaces/{ns}` | — | Namespace availability |
+| 16 | POST | `/api/v1/namespaces` | bearer | Claim an available namespace |
+| 17 | POST | `/api/v1/modules/lookup` | — | Batch digest lookup |
 
 ---
 
@@ -179,6 +183,33 @@ fetchable; `latest_version` recomputes over the remaining non-yanked versions.
 
 ### 13. `GET /api/v1/auth/whoami`  *(bearer)*
 `200 → {"account": "just-dna-seq", "namespaces": ["just-dna-seq"]}`. `401` on missing/invalid token.
+
+### 14. `POST /api/v1/auth/register`
+Self-service onboarding (community-first). Body `{"install_id": "jdi1_…", "account": "alice"}`.
+The `install_id` is a proof-of-work token minted by the just-dna-lite app at first run (SHA-256 has
+≥ `install_id_difficulty` leading zero bits). One account per install-id — re-registering an
+install-id just issues a fresh key for its existing account.
+
+`201 → {"token": "mk_live_…", "account": "alice", "namespaces": []}`. Errors:
+`403 self_register_disabled` (when `allow_self_register=false`), `422 invalid_install_id` (bad PoW),
+`422 invalid_account` (handle isn't a valid slug), `409 account_taken`.
+
+### 15. `GET /api/v1/namespaces/{ns}`
+`200 → {"namespace": "alice-mods", "valid": true, "available": true}`. Public. `valid` reflects the
+slug rule (`^[a-z0-9][a-z0-9-]*$`); `available` is false once claimed.
+
+### 16. `POST /api/v1/namespaces`  *(bearer)*
+Claim an available namespace for the caller's account. Body `{"namespace": "alice-mods"}`.
+`201 → {"namespace": "alice-mods", "owner": "alice", "already_owned": false}` (idempotent if you
+already own it → `already_owned: true`). Errors: `401`, `422 invalid_namespace`,
+`409 namespace_taken` (owned by someone else), `403 namespace_limit_reached` (account at
+`namespaces_per_account`, default 5).
+
+### 17. `POST /api/v1/modules/lookup`
+Batch of endpoint 3. Body `{"digests": ["sha256:…", …]}` (capped at `lookup_batch_max`, default
+256). `200 → {"results": [{"digest": "sha256:…", "matches": [{namespace,name,version,yanked}]}]}`.
+Lets a consumer classify many local modules (provenance / "already published?") in one request —
+digests are already in each module's `manifest.json`, so no client-side hashing.
 
 ---
 

@@ -13,9 +13,10 @@ from typing import Optional
 import typer
 from dotenv import load_dotenv
 from just_dna_format.identity import parse_version
-from just_dna_format.manifest import read_manifest
+from just_dna_format.manifest import read_manifest, write_manifest
 
 from just_dna_marketplace.client import MarketplaceClient, MarketplaceError
+from just_dna_marketplace.installid import generate_install_id
 
 load_dotenv()  # pick up MARKETPLACE_URL / MARKETPLACE_TOKEN from a local .env
 
@@ -117,8 +118,52 @@ def publish(
     """Publish a spec as a new module version (server-side recompile)."""
     with _client(url, token, need_token=True) as c:
         manifest = c.publish(namespace, name, version, spec_dir, changelog)
+    # Stamp the published identity into the local spec dir so it's discernible as "published-by-me".
+    write_manifest(manifest, Path(spec_dir) / "manifest.json")
     typer.echo(f"✓ published {manifest.identity.canonical_id}")
     typer.echo(f"  digest {manifest.artifact.digest}  compile_success={manifest.compilation.compile_success}")
+    typer.echo(f"  stamped {spec_dir}/manifest.json (identity + published_at)")
+
+
+@app.command()
+def register(
+    account: str,
+    install_id: Optional[str] = typer.Option(
+        None, "--install-id", help="Existing install-id; omit to grind a fresh one"
+    ),
+    difficulty: int = typer.Option(20, help="Proof-of-work bits when generating an install-id"),
+    url: Optional[str] = UrlOpt,
+) -> None:
+    """Self-register an account from an install-id (proof-of-work) and print an API key."""
+    if not install_id:
+        typer.echo(f"grinding install-id (difficulty {difficulty})…")
+        install_id = generate_install_id(difficulty)
+    with _client(url, None) as c:
+        result = c.register(install_id, account)
+    typer.echo(f"✓ registered account={result['account']} namespaces={result['namespaces']}")
+    typer.echo(f"install-id: {install_id}")
+    typer.echo(f"API key: {result['token']}")
+
+
+@app.command("namespace-available")
+def namespace_available(namespace: str, url: Optional[str] = UrlOpt) -> None:
+    """Check whether a namespace is free to claim."""
+    with _client(url, None) as c:
+        info = c.namespace_available(namespace)
+    state = "available" if info["available"] else "taken"
+    valid = "" if info["valid"] else " (invalid name)"
+    typer.echo(f"{namespace}: {state}{valid}")
+
+
+@app.command("claim-namespace")
+def claim_namespace(
+    namespace: str, url: Optional[str] = UrlOpt, token: Optional[str] = TokenOpt
+) -> None:
+    """Claim an available namespace for your account (token)."""
+    with _client(url, token, need_token=True) as c:
+        result = c.claim_namespace(namespace)
+    note = " (already yours)" if result.get("already_owned") else ""
+    typer.echo(f"✓ {result['namespace']} → owner {result['owner']}{note}")
 
 
 @app.command("find-by-hash")

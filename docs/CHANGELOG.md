@@ -6,6 +6,31 @@ All notable changes to **just-dna-marketplace**. Format follows
 Full API: [API-REFERENCE.md](API-REFERENCE.md) · client: [CLIENT.md](CLIENT.md) · plan:
 [ROADMAP.md](ROADMAP.md).
 
+## [0.3.0] — 2026-07-07
+
+Community-first, self-service onboarding — publish from the just-dna-lite UI without leaving the app.
+
+### Added
+- **Install-id proof-of-work** (`installid.generate_install_id` / `validate_install_id`, exported
+  at top level) — the lite app mints one at first run; SHA-256 with ≥ `install_id_difficulty`
+  (default 20) leading zero bits. Deters random/bulk spambot ids; O(1) to verify.
+- **Self-registration** — `POST /api/v1/auth/register {install_id, account}` mints an account +
+  API key (one per install-id). Gated by `allow_self_register` (default on).
+- **Namespace claim** — `GET /api/v1/namespaces/{ns}` (availability) + `POST /api/v1/namespaces`
+  (claim), up to `namespaces_per_account` (default 5) per account; `409 namespace_taken` /
+  `403 namespace_limit_reached`.
+- **Batch digest lookup** — `POST /api/v1/modules/lookup {digests:[…]}` (cap `lookup_batch_max`) to
+  classify many local modules at once.
+- **Client + CLI** — `MarketplaceClient.register / namespace_available / claim_namespace /
+  lookup_by_digests`; `marketplace-client register | namespace-available | claim-namespace`.
+- Provenance: `marketplace-client publish` now **stamps** the returned manifest into the local spec
+  dir so a module is discernible as published-by-you (no `module_spec.yaml` change).
+- Config: `allow_self_register`, `install_id_difficulty`, `namespaces_per_account`,
+  `lookup_batch_max`.
+
+### Changed
+- DB: `accounts.install_id` (unique, nullable) added via an idempotent in-place migration.
+
 ## [0.2.1] — 2026-07-07
 
 ### Added
@@ -68,6 +93,7 @@ Initial marketplace service (internal builds; superseded by 0.2.0 packaging).
   `remove-module` / `remove-namespace` (purges DB rows + artifacts, frees the namespace; not yank).
 - `.env.template`, `docs/SPEC.md`, `docs/ROADMAP.md`.
 
+[0.3.0]: #030--2026-07-07
 [0.2.1]: #021--2026-07-07
 [0.2.0]: #020--2026-07-07
 [0.1.0]: #010--2026-07-06
