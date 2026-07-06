@@ -210,46 +210,51 @@ wheels = [
 
 [[package]]
 name = "just-dna-marketplace"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
+    { name = "httpx" },
+    { name = "just-dna-format" },
+    { name = "python-dotenv" },
+    { name = "typer" },
+]
+
+[package.optional-dependencies]
+server = [
     { name = "eliot" },
     { name = "fastapi" },
-    { name = "httpx" },
     { name = "just-dna-compiler" },
-    { name = "just-dna-format" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
-    { name = "python-dotenv" },
     { name = "python-multipart" },
-    { name = "typer" },
     { name = "uvicorn" },
 ]
 
 [package.dev-dependencies]
 dev = [
-    { name = "httpx" },
+    { name = "just-dna-marketplace", extra = ["server"] },
     { name = "pytest" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "eliot", specifier = ">=1.17.5" },
-    { name = "fastapi", specifier = ">=0.139.0" },
+    { name = "eliot", marker = "extra == 'server'", specifier = ">=1.17.5" },
+    { name = "fastapi", marker = "extra == 'server'", specifier = ">=0.139.0" },
     { name = "httpx", specifier = ">=0.28.1" },
-    { name = "just-dna-compiler", specifier = ">=0.1.0" },
+    { name = "just-dna-compiler", marker = "extra == 'server'", specifier = ">=0.1.0" },
     { name = "just-dna-format", specifier = ">=0.1.0" },
-    { name = "pydantic", specifier = ">=2.13.4" },
-    { name = "pydantic-settings", specifier = ">=2.7.0" },
+    { name = "pydantic", marker = "extra == 'server'", specifier = ">=2.13.4" },
+    { name = "pydantic-settings", marker = "extra == 'server'", specifier = ">=2.7.0" },
     { name = "python-dotenv", specifier = ">=1.0.1" },
-    { name = "python-multipart", specifier = ">=0.0.9" },
+    { name = "python-multipart", marker = "extra == 'server'", specifier = ">=0.0.9" },
     { name = "typer", specifier = ">=0.26.8" },
-    { name = "uvicorn", specifier = ">=0.34.0" },
+    { name = "uvicorn", marker = "extra == 'server'", specifier = ">=0.34.0" },
 ]
+provides-extras = ["server"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "httpx", specifier = ">=0.28.1" },
+    { name = "just-dna-marketplace", extras = ["server"] },
     { name = "pytest", specifier = ">=9.0.3" },
 ]
 

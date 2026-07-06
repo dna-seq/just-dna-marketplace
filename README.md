@@ -11,32 +11,55 @@ Dagster pipelines are consumers of this API.
 See [docs/SPEC.md](docs/SPEC.md) for the full design and [docs/ROADMAP.md](docs/ROADMAP.md) for
 build status.
 
-## Quick start
+## Install
+
+Two shapes from one package:
 
 ```bash
-uv sync
-uv run pytest -q                       # run the test suite
-uv run marketplace serve               # start the API on http://127.0.0.1:8000
+pip install just-dna-marketplace            # client only (lightweight): httpx + just-dna-format
+pip install just-dna-marketplace[server]    # + FastAPI app, server-side recompile, storage, admin
 ```
 
-Then open `http://127.0.0.1:8000/docs` for the interactive API, or:
+The default install is the **reference client** — import it instead of re-implementing the REST
+calls + integrity verification:
+
+```python
+from just_dna_marketplace import MarketplaceClient
+
+with MarketplaceClient("https://module-marketplace.just-dna.life", token="mk_live_…") as mkt:
+    print(mkt.list_modules())
+    mkt.import_module("just-dna-seq", "coronary", "1.0.0", "coronary_v1.zip")   # publish a zip
+    mkt.download("just-dna-seq", "coronary", "1.0.0", "./coronary")             # fetch + verify
+    mkt.lookup_by_digest("sha256:…")                                            # already published?
+```
+
+Or the `marketplace-client` CLI (ships with the client install):
 
 ```bash
-curl http://127.0.0.1:8000/api/v1/modules          # list/search the catalog
-uv run marketplace issue-key antonkulaga -n just-dna-seq   # mint an API key for publishing
+export MARKETPLACE_URL=https://module-marketplace.just-dna.life MARKETPLACE_TOKEN=mk_live_…
+marketplace-client list
+marketplace-client download just-dna-seq coronary 1.0.0 ./coronary
+```
+
+## Run the server (needs `[server]`)
+
+```bash
+uv sync                      # dev env (includes the server extra + tests)
+uv run pytest -q
+uv run marketplace issue-key <account> -n <namespace>   # mint an API key
+uv run marketplace serve --host 0.0.0.0 --port 8000     # /docs for the interactive API
 ```
 
 ## What works today
 
 - **Read/catalog API** — list + search (`?q`, `?gene`, `?category`, `?genome_build`, `?owner`,
   `?license`, `?sort`), module detail, versions, manifest (SPEC §8.1–§8.4).
-- **Download + integrity** — per-file descriptors with SHA-256, byte serving, and a
-  verify-then-install round-trip via `just_dna_format.verify_manifest` (SPEC §5).
-- **Auth** — static API keys; `whoami`; namespace ownership gate on publish (SPEC §8.8).
-- **Yank / un-yank** — unlist a version while keeping its artifact fetchable (SPEC §6).
-
-Publishing runs all its guards but stops at the server-side recompile step (`501`) until the
-`just-dna-pipelines` integration and HuggingFace storage land — see the roadmap.
+- **Publish** — multipart spec upload **or** zip/tar.gz archive import (incl. legacy parquet-only
+  via reverse-engineering), server-side recompiled so `compile_success`/digest are trusted.
+- **Download + integrity** — per-file + streamable tar.gz, verify-then-install via
+  `just_dna_format.verify_manifest` (SPEC §5).
+- **Logs** over the API; **digest lookup**; **auth** (static API keys) + namespace ownership;
+  **yank / un-yank**; ops-only **hard removal** (`marketplace remove-namespace/-module`).
 
 ## Architecture
 
