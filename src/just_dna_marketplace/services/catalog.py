@@ -89,8 +89,12 @@ def module_detail(repo: Repository, namespace: str, name: str) -> Optional[Modul
     card = _card(repo, row)
     versions = repo.get_versions(row["id"])
     manifest = _latest_manifest(repo, row)
+    data = card.model_dump()
+    if manifest is not None:
+        # Detail carries the FULL gene list (SPEC §8.3); only cards truncate.
+        data["stats"] = manifest.stats.model_dump(include=set(CardStats.model_fields))
     return ModuleDetail(
-        **card.model_dump(),
+        **data,
         readme=row["readme"],
         versions=[_version_summary(v, namespace, name) for v in versions],
         latest_manifest=manifest,

@@ -65,6 +65,18 @@ def test_detail_and_404(client: TestClient, seeded: None) -> None:
     assert detail["stats"]["gene_count"] == 3  # full/from latest manifest
 
 
+def test_detail_returns_full_genes_but_card_truncates(
+    client: TestClient, seed: Callable[..., ModuleManifest]
+) -> None:
+    seed("just-dna-seq", "big_module", "1.0.0", genes=["A", "B", "C", "D", "E"],
+         categories=["x"], created_at="2025-01-01T00:00:00Z")
+    card = next(i for i in client.get("/api/v1/modules").json()["items"] if i["name"] == "big_module")
+    assert len(card["stats"]["genes"]) == 3  # card truncates
+    detail = client.get("/api/v1/modules/just-dna-seq/big_module").json()
+    assert detail["stats"]["genes"] == ["A", "B", "C", "D", "E"]  # detail is full (SPEC §8.3)
+    assert detail["stats"]["gene_count"] == 5
+
+
 def test_versions_endpoint(client: TestClient, seeded: None) -> None:
     body = client.get("/api/v1/modules/just-dna-seq/longevity_variants_2026/versions").json()
     assert body["total"] == 2
