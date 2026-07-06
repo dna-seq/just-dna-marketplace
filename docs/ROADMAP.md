@@ -68,7 +68,13 @@ What remains for a full MVP:
 - **Ensembl at publish**: `resolve_with_ensembl` defaults **off** (specs must carry positions);
   turn on in prod with a reference cache via `JUST_DNA_PIPELINES_CACHE_DIR` / `MARKETPLACE_ENSEMBL_CACHE`.
 - **`HfStorage`** backend (currently only `LocalStorage`) for real `302` CDN redirects + HF commit.
-- **Serving `logs`** over the API + cross-version provenance aggregation; **rate limiting** (M6).
+- **Rate limiting** (M6); cross-version provenance aggregation.
+
+**Done since:** logs over the API (list + generalized file serving), digest lookup
+(`/modules/lookup`), zip/tar.gz **archive import** (spec archive or legacy parquet-only via
+`reverse_module`), streamable **tar.gz download** (`?format=tarball`), the `marketplace-client`
+CLI (list/download/publish/import-module/find-by-hash/update-module-version), and `.env.template`.
+**33 tests**, incl. import round-trips on real sample modules.
 
 Run it: `uv run marketplace serve` · issue a key: `uv run marketplace issue-key <acct> -n <ns>`.
 
