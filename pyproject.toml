@@ -13,6 +13,7 @@ dependencies = [
     "typer>=0.26.8",
     "uvicorn>=0.34.0",
     "python-multipart>=0.0.9",
+    "httpx>=0.28.1",
     "just-dna-format>=0.1.0",
     "just-dna-compiler>=0.1.0",
 ]
@@ -23,6 +24,7 @@ build-backend = "uv_build"
 
 [project.scripts]
 marketplace = "just_dna_marketplace.cli:app"
+marketplace-client = "just_dna_marketplace.client_cli:app"
 
 [dependency-groups]
 dev = [

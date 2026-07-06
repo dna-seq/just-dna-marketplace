@@ -9,6 +9,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from dotenv import load_dotenv
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 load_dotenv()
@@ -29,7 +30,11 @@ class Settings(BaseSettings):
     storage_backend: str = "local"
     local_storage_dir: Path = Path("data/artifacts")
     hf_repo_id: str = "just-dna-seq/marketplace"
-    hf_token: str | None = None
+    # HF write token used by the (pending) HfStorage backend to manage the dataset repo. Reads
+    # MARKETPLACE_HF_TOKEN first, then the conventional HF_TOKEN that huggingface_hub itself uses.
+    hf_token: str | None = Field(
+        default=None, validation_alias=AliasChoices("MARKETPLACE_HF_TOKEN", "HF_TOKEN")
+    )
 
     # Server-side recompile (M4) pins one Ensembl reference across the ecosystem.
     ensembl_reference: str = "just-dna-seq/ensembl_variations"

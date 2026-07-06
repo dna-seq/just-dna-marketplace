@@ -89,6 +89,15 @@ class Repository:
             sql += " AND yanked = 0"
         return self.conn.execute(sql, (module_id,)).fetchall()
 
+    def find_versions_by_digest(self, digest: str) -> list[sqlite3.Row]:
+        """Every published version whose artifact matches `digest` (the content identity)."""
+        return self.conn.execute(
+            "SELECT m.namespace, m.name, v.version, v.yanked FROM versions v "
+            "JOIN modules m ON m.id = v.module_id WHERE v.digest = ? "
+            "ORDER BY m.namespace, m.name, v.version",
+            (digest,),
+        ).fetchall()
+
     def get_manifest_json(
         self, namespace: str, name: str, version: str
     ) -> Optional[str]:

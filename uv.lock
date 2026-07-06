@@ -215,6 +215,7 @@ source = { editable = "." }
 dependencies = [
     { name = "eliot" },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "just-dna-compiler" },
     { name = "just-dna-format" },
     { name = "pydantic" },
@@ -235,6 +236,7 @@ dev = [
 requires-dist = [
     { name = "eliot", specifier = ">=1.17.5" },
     { name = "fastapi", specifier = ">=0.139.0" },
+    { name = "httpx", specifier = ">=0.28.1" },
     { name = "just-dna-compiler", specifier = ">=0.1.0" },
     { name = "just-dna-format", specifier = ">=0.1.0" },
     { name = "pydantic", specifier = ">=2.13.4" },

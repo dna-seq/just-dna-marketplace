@@ -46,6 +46,28 @@ def list_modules(
     )
 
 
+@router.get("/lookup")
+def lookup_by_digest(repo: RepoDep, digest: str) -> dict:
+    """Find published versions whose artifact matches `digest` (the content identity, SPEC §6).
+
+    Lets a publisher check whether an already-compiled module is on the marketplace before
+    re-uploading. Returns `{matches: [{namespace, name, version, yanked}]}` (empty if none).
+    """
+    rows = repo.find_versions_by_digest(digest)
+    return {
+        "digest": digest,
+        "matches": [
+            {
+                "namespace": r["namespace"],
+                "name": r["name"],
+                "version": r["version"],
+                "yanked": bool(r["yanked"]),
+            }
+            for r in rows
+        ],
+    }
+
+
 @router.get("/{namespace}/{name}", response_model=ModuleDetail)
 def get_module(repo: RepoDep, namespace: str, name: str) -> ModuleDetail:
     detail = catalog.module_detail(repo, namespace, name)
@@ -74,27 +96,48 @@ def get_manifest(repo: RepoDep, namespace: str, name: str, version: str) -> dict
     return manifest.model_dump()
 
 
-@router.get("/{namespace}/{name}/versions/{version}/files/{file}")
+@router.get("/{namespace}/{name}/versions/{version}/logs")
+def list_logs(repo: RepoDep, namespace: str, name: str, version: str) -> dict:
+    """List a version's optional provenance/run logs (§ manifest.logs), with fetch URLs."""
+    manifest = catalog.get_manifest(repo, namespace, name, version)
+    if manifest is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="version_not_found")
+    base = f"/api/v1/modules/{namespace}/{name}/versions/{version}/files"
+    return {
+        "items": [
+            {"name": e.name, "sha256": e.sha256, "size": e.size, "url": f"{base}/{e.name}"}
+            for e in manifest.logs
+        ]
+    }
+
+
+@router.get("/{namespace}/{name}/versions/{version}/files/{file_path:path}")
 def get_file(
     repo: RepoDep,
     storage: StorageDep,
     namespace: str,
     name: str,
     version: str,
-    file: str,
+    file_path: str,
 ) -> Response:
-    """Serve (or redirect to) a single artifact file, verified against the manifest listing."""
+    """Serve (or redirect to) any file recorded in the manifest — artifact parquet, provenance
+    log (e.g. `logs/reviewer.log`), or input — validated against the manifest listing."""
     manifest = catalog.get_manifest(repo, namespace, name, version)
     if manifest is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="version_not_found")
-    if file not in {f.name for f in manifest.artifact.files}:
+    allowed = (
+        {f.name for f in manifest.artifact.files}
+        | {e.name for e in manifest.logs}
+        | {e.name for e in manifest.inputs}
+    )
+    if file_path not in allowed:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="file_not_found")
 
     key = version_key(namespace, name, version)
-    external = storage.file_url(key, file)
+    external = storage.file_url(key, file_path)
     if external is not None:
         return RedirectResponse(external, status_code=status.HTTP_302_FOUND)
-    data = storage.read_file(key, file)
+    data = storage.read_file(key, file_path)
     return Response(content=data, media_type="application/octet-stream")
 
 
