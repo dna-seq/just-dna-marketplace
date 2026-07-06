@@ -40,3 +40,8 @@ class StorageBackend(Protocol):
         URL and the API should serve the bytes itself (the local backend's behavior).
         """
         ...
+
+    def remove(self, key: str) -> None:
+        """Hard-delete everything stored under `key` (a version key or a `{ns}/{name}` / `{ns}`
+        prefix). Used only by the ops removal CLI, never the public API. Idempotent."""
+        ...

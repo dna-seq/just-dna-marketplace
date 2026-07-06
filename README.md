@@ -5,6 +5,9 @@ modules. Authors publish module specs; the server validates, recompiles, stores,
 consumers browse, search, download, and integrity-verify. There is no frontend here — the webui and
 Dagster pipelines are consumers of this API.
 
+**Live:** <https://module-marketplace.just-dna.life> · health `GET /health` · API under `/api/v1`
+· interactive docs at [`/docs`](https://module-marketplace.just-dna.life/docs).
+
 See [docs/SPEC.md](docs/SPEC.md) for the full design and [docs/ROADMAP.md](docs/ROADMAP.md) for
 build status.
 

@@ -89,6 +89,27 @@ class Repository:
             sql += " AND yanked = 0"
         return self.conn.execute(sql, (module_id,)).fetchall()
 
+    def modules_in_namespace(self, namespace: str) -> list[sqlite3.Row]:
+        return self.conn.execute(
+            "SELECT id, name FROM modules WHERE namespace = ? ORDER BY name", (namespace,)
+        ).fetchall()
+
+    def delete_module(self, namespace: str, name: str) -> list[str]:
+        """Hard-delete a module and cascade its versions + facet rows. Returns the versions removed
+        (for storage cleanup), or [] if the module didn't exist. Ops-only — not the public API."""
+        row = self.get_module_row(namespace, name)
+        if row is None:
+            return []
+        versions = [r["version"] for r in self.get_versions(row["id"])]
+        self.conn.execute("DELETE FROM modules WHERE id = ?", (row["id"],))
+        self.conn.commit()
+        return versions
+
+    def delete_namespace_grant(self, namespace: str) -> None:
+        """Free a namespace's ownership so a new key can claim it."""
+        self.conn.execute("DELETE FROM namespaces WHERE name = ?", (namespace,))
+        self.conn.commit()
+
     def find_versions_by_digest(self, digest: str) -> list[sqlite3.Row]:
         """Every published version whose artifact matches `digest` (the content identity)."""
         return self.conn.execute(

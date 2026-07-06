@@ -6,6 +6,7 @@ and `name` may be a nested path (e.g. `logs/reviewer.log`). Has no external URL,
 file bytes itself via the files endpoint.
 """
 
+import shutil
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Optional
@@ -36,3 +37,6 @@ class LocalStorage:
     def file_url(self, key: str, name: str) -> Optional[str]:
         # Local backend has no external URL; the API streams the bytes instead.
         return None
+
+    def remove(self, key: str) -> None:
+        shutil.rmtree(self._dir(key), ignore_errors=True)
