@@ -7,7 +7,7 @@ stores the compiled version, and indexes it. Guards run in order — auth (401),
 (403), version format (422), immutability (409) — before any compile work.
 """
 
-from typing import Annotated
+from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from just_dna_format.identity import is_valid_version
@@ -69,6 +69,62 @@ async def publish(
             changelog=changelog,
             owner=account.name,
             files=uploads,
+        )
+    except publish_service.PublishError as exc:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={"error": exc.detail, "errors": exc.errors, "warnings": exc.warnings},
+        )
+    return manifest.model_dump()
+
+
+@router.post("/{namespace}/{name}/versions/import", status_code=status.HTTP_201_CREATED)
+async def import_archive(
+    repo: RepoDep,
+    storage: StorageDep,
+    settings: SettingsDep,
+    account: AccountDep,
+    namespace: str,
+    name: str,
+    version: Annotated[str, Form()],
+    archive: Annotated[UploadFile, File()],
+    changelog: Annotated[str, Form()] = "",
+    title: Annotated[Optional[str], Form()] = None,
+    description: Annotated[Optional[str], Form()] = None,
+    report_title: Annotated[Optional[str], Form()] = None,
+    icon: Annotated[Optional[str], Form()] = None,
+    color: Annotated[Optional[str], Form()] = None,
+) -> dict:
+    """Publish from a zip/tar.gz archive (in-house packaging / legacy import).
+
+    A spec archive is recompiled directly; a legacy parquet-only archive is reverse-engineered
+    with the client-supplied display metadata, then recompiled. Same guards as `publish`.
+    """
+    require_namespace_member(account, namespace)
+    if not is_valid_version(version):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail="invalid_version")
+    if repo.version_exists(namespace, name, version):
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="version_exists")
+
+    data = await archive.read()
+    try:
+        manifest = publish_service.import_archive(
+            repo=repo,
+            storage=storage,
+            settings=settings,
+            namespace=namespace,
+            name=name,
+            version=version,
+            changelog=changelog,
+            owner=account.name,
+            archive=data,
+            display={
+                "title": title,
+                "description": description,
+                "report_title": report_title,
+                "icon": icon,
+                "color": color,
+            },
         )
     except publish_service.PublishError as exc:
         raise HTTPException(

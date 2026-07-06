@@ -1,17 +1,25 @@
 """
 Server-side publish (SPEC §7, §8.6–§8.7): the trust-bearing path.
 
-The publisher uploads the **spec only**; the server validates it, runs `compile_module` itself
-(so `compile_success`, input hashes, and the artifact digest are produced by the trusted party),
-fills the marketplace-level manifest fields, stores the compiled module under a version key, and
-indexes the manifest into the catalog DB.
+The publisher uploads the **spec only** (as individual files or a zip/tar.gz archive); the server
+validates it, runs `compile_module` itself (so `compile_success`, input hashes, and the artifact
+digest are produced by the trusted party), fills the marketplace-level manifest fields, stores the
+compiled module under a version key, and indexes the manifest.
+
+Legacy modules that ship only compiled parquets (the old zip format, no manifest) are imported by
+reverse-engineering a spec (`reverse_module`) with the client supplying the missing display
+metadata, then recompiling — same trust guarantee.
 """
 
+import io
+import shutil
+import tarfile
 import tempfile
+import zipfile
 from pathlib import Path
-from typing import Mapping
+from typing import Mapping, Optional
 
-from just_dna_compiler.compiler import compile_module, validate_spec
+from just_dna_compiler.compiler import compile_module, reverse_module, validate_spec
 from just_dna_format.identity import canonical_id
 from just_dna_format.manifest import (
     MARKETPLACE_COMPILED_BY,
@@ -24,9 +32,8 @@ from just_dna_marketplace.db.repository import Repository
 from just_dna_marketplace.services.ingest import ingest_manifest, now_iso
 from just_dna_marketplace.storage.base import StorageBackend, version_key
 
-# Spec files the publisher may upload (module_spec.yaml + variants.csv + studies.csv are required
-# for a valid spec; the rest are optional and carried through).
 REQUIRED_SPEC_FILES: tuple[str, ...] = ("module_spec.yaml", "variants.csv", "studies.csv")
+_REVERSE_MARKER: str = "weights.parquet"  # a legacy compiled module has this but no spec
 
 
 class PublishError(Exception):
@@ -41,6 +48,9 @@ class PublishError(Exception):
         self.warnings = warnings or []
 
 
+# ── Public entry points ───────────────────────────────────────────────────────
+
+
 def publish_version(
     *,
     repo: Repository,
@@ -53,28 +63,76 @@ def publish_version(
     owner: str,
     files: Mapping[str, bytes],
 ) -> ModuleManifest:
-    """Validate + recompile an uploaded spec, store it, and index it. Returns the manifest.
-
-    Raises `PublishError` for a missing/invalid/uncompilable spec or a name mismatch.
-    """
+    """Publish from individually-uploaded spec files."""
     missing = [f for f in REQUIRED_SPEC_FILES if f not in files]
     if missing:
         raise PublishError("missing_spec_files", errors=[f"missing: {m}" for m in missing])
-
     with tempfile.TemporaryDirectory() as tmp:
         spec_dir = Path(tmp) / "spec"
-        out_dir = Path(tmp) / "out"
         for rel, data in files.items():
             dest = spec_dir / rel
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_bytes(data)
+        return _finalize(
+            repo=repo, storage=storage, settings=settings, namespace=namespace, name=name,
+            version=version, changelog=changelog, owner=owner, spec_dir=spec_dir,
+        )
 
-        validation = validate_spec(spec_dir)
-        if not validation.valid:
-            raise PublishError(
-                "invalid_spec", errors=validation.errors, warnings=validation.warnings
-            )
 
+def import_archive(
+    *,
+    repo: Repository,
+    storage: StorageBackend,
+    settings: Settings,
+    namespace: str,
+    name: str,
+    version: str,
+    changelog: str,
+    owner: str,
+    archive: bytes,
+    display: Optional[dict] = None,
+) -> ModuleManifest:
+    """Publish from a zip/tar.gz archive: a spec archive is compiled directly; a legacy
+    parquet-only archive is reverse-engineered (with client-supplied `display` metadata) first."""
+    with tempfile.TemporaryDirectory() as tmp:
+        extracted = Path(tmp) / "extracted"
+        extracted.mkdir()
+        _extract_archive(archive, extracted)
+        root = _module_root(extracted)
+
+        if (root / "module_spec.yaml").is_file():
+            spec_dir = root
+        else:
+            spec_dir = Path(tmp) / "reversed"
+            reverse_module(root, spec_dir, module_name=name, **(_reverse_kwargs(display)))
+        return _finalize(
+            repo=repo, storage=storage, settings=settings, namespace=namespace, name=name,
+            version=version, changelog=changelog, owner=owner, spec_dir=spec_dir,
+        )
+
+
+# ── Core ──────────────────────────────────────────────────────────────────────
+
+
+def _finalize(
+    *,
+    repo: Repository,
+    storage: StorageBackend,
+    settings: Settings,
+    namespace: str,
+    name: str,
+    version: str,
+    changelog: str,
+    owner: str,
+    spec_dir: Path,
+) -> ModuleManifest:
+    """Validate + recompile a prepared spec dir, store the version, and index it."""
+    validation = validate_spec(spec_dir)
+    if not validation.valid:
+        raise PublishError("invalid_spec", errors=validation.errors, warnings=validation.warnings)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        out_dir = Path(tmp) / "out"
         result = compile_module(
             spec_dir,
             out_dir,
@@ -84,9 +142,7 @@ def publish_version(
             ensembl_reference=settings.ensembl_reference,
         )
         if not result.success or result.manifest is None:
-            raise PublishError(
-                "compile_failed", errors=result.errors, warnings=result.warnings
-            )
+            raise PublishError("compile_failed", errors=result.errors, warnings=result.warnings)
 
         manifest = result.manifest
         if manifest.identity.name != name:
@@ -95,7 +151,6 @@ def publish_version(
                 errors=[f"module_spec name {manifest.identity.name!r} != path {name!r}"],
             )
 
-        # Fill the marketplace-level fields the local compiler leaves null (SPEC §4).
         manifest.identity.namespace = namespace
         manifest.identity.version = version
         manifest.identity.canonical_id = canonical_id(namespace, name, version)
@@ -103,19 +158,63 @@ def publish_version(
         manifest.published_at = now_iso()
         write_manifest(manifest, out_dir / "manifest.json")
 
-        # Carry the spec inputs into the module dir so the stored version is self-contained,
-        # then store everything (parquets, manifest.json, logs, inputs) under the version key.
-        for rel, data in files.items():
-            dest = out_dir / rel
+        # Carry spec inputs (yaml/csv/md/logo) into the module dir; skip parquets (the recompiled
+        # ones in out_dir are authoritative) and anything compile already produced (logs).
+        for src in spec_dir.rglob("*"):
+            if not src.is_file() or src.suffix == ".parquet":
+                continue
+            dest = out_dir / src.relative_to(spec_dir).as_posix()
             if not dest.exists():
                 dest.parent.mkdir(parents=True, exist_ok=True)
-                dest.write_bytes(data)
+                shutil.copyfile(src, dest)
+
         stored = {
             p.relative_to(out_dir).as_posix(): p.read_bytes()
             for p in out_dir.rglob("*")
             if p.is_file()
         }
         storage.store_module(version_key(namespace, name, version), stored)
-
         ingest_manifest(repo, manifest, changelog=changelog)
         return manifest
+
+
+# ── Archive helpers ─────────────────────────────────────────────────────────────
+
+
+def _extract_archive(data: bytes, dest: Path) -> None:
+    """Safely extract a zip or tar.gz archive into `dest` (guards path traversal)."""
+    buf = io.BytesIO(data)
+    if zipfile.is_zipfile(buf):
+        buf.seek(0)
+        with zipfile.ZipFile(buf) as zf:
+            root = dest.resolve()
+            for member in zf.namelist():
+                if not (dest / member).resolve().is_relative_to(root):
+                    raise PublishError("unsafe_archive", errors=[f"path escapes archive: {member}"])
+            zf.extractall(dest)
+        return
+    buf.seek(0)
+    try:
+        with tarfile.open(fileobj=buf, mode="r:*") as tf:
+            tf.extractall(dest, filter="data")  # 'data' filter blocks traversal/special files
+    except tarfile.TarError as exc:
+        raise PublishError("bad_archive", errors=[f"not a valid zip or tar.gz: {exc}"])
+
+
+def _module_root(extracted: Path) -> Path:
+    """Locate the directory holding the module (spec or legacy parquets) within an extraction."""
+    for marker in ("module_spec.yaml", _REVERSE_MARKER):
+        hits = sorted(extracted.rglob(marker))
+        if hits:
+            return hits[0].parent
+    raise PublishError(
+        "no_module_content",
+        errors=["archive contains neither module_spec.yaml nor weights.parquet"],
+    )
+
+
+def _reverse_kwargs(display: Optional[dict]) -> dict:
+    """Filter client-supplied display metadata to reverse_module's accepted, non-null keys."""
+    allowed = ("title", "description", "report_title", "icon", "color")
+    display = display or {}
+    return {k: display[k] for k in allowed if display.get(k) is not None}

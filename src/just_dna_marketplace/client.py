@@ -148,3 +148,38 @@ class MarketplaceClient:
             files=files,
         )
         return ModuleManifest.model_validate(self._json(resp))
+
+    def import_module(
+        self,
+        namespace: str,
+        name: str,
+        version: str,
+        archive_path: Path,
+        *,
+        changelog: str = "",
+        display: Optional[dict] = None,
+    ) -> ModuleManifest:
+        """Publish from a zip/tar.gz archive (spec archive or legacy parquet-only + `display`)."""
+        archive_path = Path(archive_path)
+        data = {"version": version, "changelog": changelog}
+        for key in ("title", "description", "report_title", "icon", "color"):
+            if display and display.get(key) is not None:
+                data[key] = display[key]
+        resp = self._http.post(
+            f"/modules/{namespace}/{name}/versions/import",
+            data=data,
+            files={"archive": (archive_path.name, archive_path.read_bytes(), "application/octet-stream")},
+        )
+        return ModuleManifest.model_validate(self._json(resp))
+
+    def get_tarball(self, namespace: str, name: str, version: str, dest: Path) -> Path:
+        """Download a version as a single streamable `tar.gz` to `dest`. Returns the path."""
+        resp = self._http.get(
+            f"/modules/{namespace}/{name}/versions/{version}/download", params={"format": "tarball"}
+        )
+        if resp.status_code >= 400:
+            raise MarketplaceError(resp.status_code, resp.text)
+        dest = Path(dest)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(resp.content)
+        return dest

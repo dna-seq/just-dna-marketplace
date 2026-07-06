@@ -2,10 +2,13 @@
 Read/catalog + download endpoints (SPEC §8.1–§8.5). All anonymous.
 """
 
+import io
+import tarfile
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
+from just_dna_format.manifest import ModuleManifest
 
 from just_dna_marketplace.api.deps import Pagination, get_repo, get_storage, pagination
 from just_dna_marketplace.db.repository import Repository
@@ -141,6 +144,27 @@ def get_file(
     return Response(content=data, media_type="application/octet-stream")
 
 
+def _build_tarball(storage: StorageBackend, key: str, manifest: ModuleManifest) -> bytes:
+    """Build a streamable tar.gz of the whole module version (manifest + artifact + logs + inputs).
+
+    `manifest.json` comes from the DB manifest (authoritative); every other file is read from
+    storage, skipping any optional ones (logs/inputs) not present. Deterministic (no mtimes).
+    """
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+
+        def _add(name: str, data: bytes) -> None:
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+
+        _add("manifest.json", manifest.model_dump_json(indent=2).encode("utf-8") + b"\n")
+        for entry in [*manifest.artifact.files, *manifest.logs, *manifest.inputs]:
+            if storage.exists(key, entry.name):
+                _add(entry.name, storage.read_file(key, entry.name))
+    return buf.getvalue()
+
+
 @router.get("/{namespace}/{name}/versions/{version}/download")
 def download(
     repo: RepoDep,
@@ -148,17 +172,26 @@ def download(
     namespace: str,
     name: str,
     version: str,
-    format: str = Query("files", pattern="^(files)$"),
-) -> dict:
+    format: str = Query("files", pattern="^(files|tarball)$"),
+) -> Response:
     """
-    Return per-file download descriptors `{name, url, sha256, size}` for verify-then-install.
-    (Tarball redirect is an HF-backend feature added with `HfStorage`.)
+    `format=files` (default): per-file descriptors `{name, url, sha256, size}` for
+    verify-then-install. `format=tarball`: a streamable `tar.gz` of the whole module version.
     """
     manifest = catalog.get_manifest(repo, namespace, name, version)
     if manifest is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="version_not_found")
     repo.increment_downloads(namespace, name)
     key = version_key(namespace, name, version)
+
+    if format == "tarball":
+        data = _build_tarball(storage, key, manifest)
+        return Response(
+            content=data,
+            media_type="application/gzip",
+            headers={"Content-Disposition": f'attachment; filename="{name}-{version}.tar.gz"'},
+        )
+
     base = f"/api/v1/modules/{namespace}/{name}/versions/{version}/files"
     files = [
         {
@@ -169,4 +202,4 @@ def download(
         }
         for f in manifest.artifact.files
     ]
-    return {"digest": manifest.artifact.digest, "files": files}
+    return JSONResponse({"digest": manifest.artifact.digest, "files": files})

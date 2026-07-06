@@ -59,16 +59,46 @@ def download(
     namespace: str,
     name: str,
     version: str,
-    dest: Path = typer.Argument(..., help="Directory to write the module into"),
+    dest: Path = typer.Argument(..., help="Directory to extract into, or the .tar.gz path with --tarball"),
+    tarball: bool = typer.Option(False, "--tarball", help="Fetch a single streamable tar.gz instead"),
     url: Optional[str] = UrlOpt,
 ) -> None:
-    """Download a version's artifact (+ logs) and integrity-verify it."""
+    """Download a version's artifact (+ logs): verify-then-install, or a single tar.gz."""
     with _client(url, None) as c:
+        if tarball:
+            path = c.get_tarball(namespace, name, version, dest)
+            typer.echo(f"✓ downloaded {namespace}/{name}@{version} → {path}")
+            return
         manifest = c.download(namespace, name, version, dest)
     typer.echo(f"✓ downloaded + verified {namespace}/{name}@{version} → {dest}")
     typer.echo(f"  digest {manifest.artifact.digest}")
     if manifest.logs:
         typer.echo(f"  logs: {', '.join(e.name for e in manifest.logs)}")
+
+
+@app.command("import-module")
+def import_module(
+    namespace: str,
+    name: str,
+    version: str,
+    archive: Path = typer.Argument(..., help="A zip/tar.gz spec archive (or legacy parquet-only)"),
+    changelog: str = typer.Option("", "--changelog"),
+    title: Optional[str] = typer.Option(None, help="Display metadata for legacy parquet-only imports"),
+    description: Optional[str] = typer.Option(None),
+    report_title: Optional[str] = typer.Option(None),
+    icon: Optional[str] = typer.Option(None),
+    color: Optional[str] = typer.Option(None),
+    url: Optional[str] = UrlOpt,
+    token: Optional[str] = TokenOpt,
+) -> None:
+    """Publish a module from a zip/tar.gz archive (in-house packaging / legacy import)."""
+    display = {
+        "title": title, "description": description, "report_title": report_title,
+        "icon": icon, "color": color,
+    }
+    with _client(url, token, need_token=True) as c:
+        manifest = c.import_module(namespace, name, version, archive, changelog=changelog, display=display)
+    typer.echo(f"✓ imported {manifest.identity.canonical_id}  digest {manifest.artifact.digest}")
 
 
 @app.command()
