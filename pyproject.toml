@@ -1,6 +1,6 @@
 [project]
 name = "just-dna-marketplace"
-version = "0.2.0"
+version = "0.2.1"
 description = "Reference client (and optional server) for the just-dna annotation module marketplace"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -21,6 +21,7 @@ server = [
     "pydantic-settings>=2.7.0",
     "python-multipart>=0.0.9",
     "eliot>=1.17.5",
+    "huggingface-hub>=0.27.0",
     "just-dna-compiler>=0.1.0",
 ]
 

@@ -50,31 +50,39 @@ deferred.
 
 **Dependency order:** M0 → M1 → M2 → M3 / M4 (M4 needs M0+M1+M2) → M5 → M6.
 
-### Current state (2026-07-06)
+### Current state (2026-07-07) — v0.2.0, live
 
-The service now depends on the **published PyPI packages** `just-dna-format>=0.1.0` and
-`just-dna-compiler>=0.1.0` (no local path sources). **23 marketplace tests green.** Working
-end-to-end: read/catalog API, **publish via multipart spec upload → server-side recompile
-(`compile_module(..., compiled_by="marketplace-server")`) → version-scoped storage → index**,
-download + integrity round-trip, API-key auth, `whoami`, and yank/un-yank. Storage is
-version-scoped (`{ns}/{name}/{version}`) so per-version logs and manifests don't collide; the
-`artifact.digest` remains the integrity/content identity in the manifest.
+**Live** at <https://module-marketplace.just-dna.life>. Depends on the published PyPI packages
+`just-dna-format>=0.1.0` + `just-dna-compiler>=0.1.0`. **39 tests green**; full integration run
+passed against the live server. Packaged **client-first**: default install is the reference client
+(`from just_dna_marketplace import MarketplaceClient`); the server is the `[server]` extra.
+
+Shipped (beyond the core M2–M5 loop):
+
+- ✅ **Publish** — multipart spec upload **and** zip/tar.gz **archive import** (spec archive or
+  legacy parquet-only via `reverse_module`), server-side recompiled.
+- ✅ **Download** — per-file verify-then-install **and** streamable **tar.gz** (`?format=tarball`);
+  generalized `…/files/{path}` serves parquets, logs, and inputs.
+- ✅ **Logs over the API** (`…/versions/{v}/logs` + file serving).
+- ✅ **Digest lookup** (`GET /modules/lookup?digest=`).
+- ✅ **Auth** (static keys) + ownership, **whoami**, **yank/un-yank**.
+- ✅ **Ops-only hard removal** (`marketplace remove-module` / `remove-namespace`).
+- ✅ **Debug logging** behind `MARKETPLACE_DEBUG` (request tracing + Eliot pipeline steps).
+- ✅ **HF token startup guard** — `storage_backend=hf` validates a write-capable token or exits 1.
+- ✅ **Reference client + CLI** (`marketplace-client`); docs: `API-REFERENCE.md`, `CLIENT.md`,
+  `CHANGELOG.md`, `.env.template`.
 
 What remains for a full MVP:
 
 - **M1** (in `just-dna-lite/just-dna-pipelines`): repoint its `module_compiler` to
   `just-dna-compiler` (re-export shim + delete the duplicate) and add `.json` to `_SPEC_SUFFIXES`
   (§10 A4). Cross-repo, deferred pending the go-ahead to edit it.
-- **Ensembl at publish**: `resolve_with_ensembl` defaults **off** (specs must carry positions);
-  turn on in prod with a reference cache via `JUST_DNA_PIPELINES_CACHE_DIR` / `MARKETPLACE_ENSEMBL_CACHE`.
 - **`HfStorage`** backend (currently only `LocalStorage`) for real `302` CDN redirects + HF commit.
+  (The startup token guard is already in place for when it lands.)
 - **Rate limiting** (M6); cross-version provenance aggregation.
-
-**Done since:** logs over the API (list + generalized file serving), digest lookup
-(`/modules/lookup`), zip/tar.gz **archive import** (spec archive or legacy parquet-only via
-`reverse_module`), streamable **tar.gz download** (`?format=tarball`), the `marketplace-client`
-CLI (list/download/publish/import-module/find-by-hash/update-module-version), and `.env.template`.
-**33 tests**, incl. import round-trips on real sample modules.
+- **Ensembl at publish** is opt-in: `resolve_with_ensembl` defaults **off** (specs must carry
+  positions); enable with a reference cache via `JUST_DNA_PIPELINES_CACHE_DIR` /
+  `MARKETPLACE_ENSEMBL_CACHE`.
 
 Run it: `uv run marketplace serve` · issue a key: `uv run marketplace issue-key <acct> -n <ns>`.
 

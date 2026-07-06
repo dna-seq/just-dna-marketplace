@@ -17,6 +17,7 @@ from just_dna_marketplace.config import API_PREFIX, Settings, get_settings
 from just_dna_marketplace.db.repository import Repository
 from just_dna_marketplace.db.schema import connect, init_db
 from just_dna_marketplace.logging_setup import configure_logging
+from just_dna_marketplace.startup import validate_hf_access
 from just_dna_marketplace.storage.base import StorageBackend
 from just_dna_marketplace.storage.local import LocalStorage
 
@@ -35,7 +36,8 @@ def _build_storage(settings: Settings) -> StorageBackend:
 def create_app(settings: Optional[Settings] = None) -> FastAPI:
     settings = settings or get_settings()
     configure_logging(settings)
-    app = FastAPI(title="just-dna-marketplace", version="0.1.0")
+    validate_hf_access(settings)  # exits(1) if hf backend + missing/read-only token; no-op for local
+    app = FastAPI(title="just-dna-marketplace", version="0.2.1")
 
     conn = connect(settings.db_path)
     init_db(conn)
