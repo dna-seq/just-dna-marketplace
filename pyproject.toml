@@ -1,0 +1,32 @@
+[project]
+name = "just-dna-marketplace"
+version = "0.1.0"
+description = "Annotation module marketplace — a catalog/publish/download REST API for just-dna-lite"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.139.0",
+    "pydantic>=2.13.4",
+    "pydantic-settings>=2.7.0",
+    "python-dotenv>=1.0.1",
+    "eliot>=1.17.5",
+    "typer>=0.26.8",
+    "uvicorn>=0.34.0",
+    "just-dna-module",
+]
+
+[build-system]
+requires = ["uv-build"]
+build-backend = "uv_build"
+
+[tool.uv.sources]
+just-dna-module = { path = "../just-dna-module", editable = true }
+
+[project.scripts]
+marketplace = "just_dna_marketplace.cli:app"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+    "httpx>=0.28.1",
+]

@@ -1,0 +1,88 @@
+"""
+SQLite catalog schema and connection helper.
+
+The DB is a *projection* of each version's `manifest.json` (the source of truth). Rows exist per
+`(namespace, name, version)`, with denormalized module-level fields for the card grid and side
+tables (`version_genes`, `version_categories`) for facet filters. SPEC §9.
+"""
+
+import sqlite3
+from pathlib import Path
+
+SCHEMA: str = """
+CREATE TABLE IF NOT EXISTS accounts (
+    id         INTEGER PRIMARY KEY,
+    name       TEXT NOT NULL UNIQUE
+);
+
+CREATE TABLE IF NOT EXISTS api_keys (
+    key        TEXT PRIMARY KEY,
+    account_id INTEGER NOT NULL REFERENCES accounts(id)
+);
+
+CREATE TABLE IF NOT EXISTS namespaces (
+    name       TEXT PRIMARY KEY,
+    account_id INTEGER NOT NULL REFERENCES accounts(id)
+);
+
+CREATE TABLE IF NOT EXISTS modules (
+    id             INTEGER PRIMARY KEY,
+    namespace      TEXT NOT NULL,
+    name           TEXT NOT NULL,
+    title          TEXT NOT NULL,
+    description    TEXT NOT NULL DEFAULT '',
+    icon           TEXT NOT NULL DEFAULT 'database',
+    color          TEXT NOT NULL DEFAULT '#6435c9',
+    genome_build   TEXT NOT NULL DEFAULT 'GRCh38',
+    license        TEXT,
+    owner          TEXT,
+    readme         TEXT NOT NULL DEFAULT '',
+    latest_version TEXT,
+    downloads      INTEGER NOT NULL DEFAULT 0,
+    updated_at     TEXT NOT NULL DEFAULT '',
+    UNIQUE(namespace, name)
+);
+
+CREATE TABLE IF NOT EXISTS versions (
+    id              INTEGER PRIMARY KEY,
+    module_id       INTEGER NOT NULL REFERENCES modules(id) ON DELETE CASCADE,
+    version         TEXT NOT NULL,
+    digest          TEXT NOT NULL,
+    manifest_json   TEXT NOT NULL,
+    compile_success INTEGER NOT NULL DEFAULT 0,
+    yanked          INTEGER NOT NULL DEFAULT 0,
+    changelog       TEXT NOT NULL DEFAULT '',
+    created_at      TEXT NOT NULL DEFAULT '',
+    UNIQUE(module_id, version)
+);
+
+CREATE TABLE IF NOT EXISTS version_genes (
+    version_id INTEGER NOT NULL REFERENCES versions(id) ON DELETE CASCADE,
+    gene       TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS version_categories (
+    version_id INTEGER NOT NULL REFERENCES versions(id) ON DELETE CASCADE,
+    category   TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_versions_module ON versions(module_id);
+CREATE INDEX IF NOT EXISTS idx_version_genes ON version_genes(gene);
+CREATE INDEX IF NOT EXISTS idx_version_categories ON version_categories(category);
+"""
+
+
+def connect(db_path: Path) -> sqlite3.Connection:
+    """Open a SQLite connection with row access by name and foreign keys enabled."""
+    db_path = Path(db_path)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(db_path, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
+
+
+def init_db(conn: sqlite3.Connection) -> None:
+    """Create tables if they do not exist."""
+    conn.executescript(SCHEMA)
+    conn.commit()
