@@ -43,6 +43,7 @@ use an object.
 | `409` | `version_exists` | re-publishing an existing `(ns, name, version)` (immutable) |
 | `422` | `invalid_version` | version isn't SemVer `MAJOR.MINOR.PATCH` |
 | `422` | `{ "error": "<code>", "errors": [...], "warnings": [...] }` | spec/import failure (see below) |
+| `429` | `rate_limited` | token bucket exhausted (search/download/publish); `Retry-After` header |
 
 Publish/import `422.error` codes: `missing_spec_files`, `invalid_spec` (carries
 `ValidationResult.errors`/`warnings`), `compile_failed`, `name_mismatch`, and for import
@@ -81,11 +82,16 @@ Publish/import `422.error` codes: `missing_spec_files`, `invalid_spec` (carries
 List/search the catalog (one **card** per module, its latest non-yanked version).
 
 Query params: `q` (title/description substring), `category`, `gene`, `genome_build`, `owner`,
-`license` (exact facet matches), `sort` = `name` (default) | `downloads` | `recent`, plus `page`,
-`per_page`. Facet filters match modules with a non-yanked version carrying that gene/category.
+`license` (exact facet matches), `namespace` (restrict to one namespace), `featured` (`true` →
+only featured), `include_blacklisted` (`true` → include hidden namespaces), `sort` = `name`
+(default) | `downloads` | `recent`, plus `page`, `per_page`. Facet filters match modules with a
+non-yanked version carrying that gene/category.
 
-`200 → Page<ModuleCard>`. Card `stats.genes` is **truncated** (top 3); the full list is in the
-detail and manifest.
+`200 → Page<ModuleCard>`. **Featured** modules float to the top of every sort (card has
+`featured: bool`). **Blacklisted** namespaces are omitted by default — returned only with
+`include_blacklisted=true` or an explicit `namespace=` (moderation, not deletion). Card
+`stats.genes` is **truncated** (top 3); the full list is in the detail and manifest. Rate-limited
+(`search` bucket).
 
 ```json
 {

@@ -195,6 +195,10 @@ Not part of the client surface, but for completeness — run **on the server**, 
 marketplace serve --host 0.0.0.0 --port 8000
 marketplace init-db
 marketplace issue-key <account> -n <namespace>          # mint an API key
+marketplace revoke-key <key>                            # invalidate a leaked key
+marketplace revoke-account <account> [--yes]            # invalidate all of an account's keys
+marketplace feature <ns> / unfeature <ns>               # curate: float a namespace to the top
+marketplace blacklist <ns> / unblacklist <ns>           # moderate: hide from default listings
 marketplace remove-module <ns> <name> [--yes]           # ops-only hard delete (not yank)
 marketplace remove-namespace <ns> [--yes]               # purge + free the namespace
 ```

@@ -80,7 +80,41 @@ DB: `accounts.install_id` (unique, nullable — admin keys exempt) added via an 
 so the live catalog upgrades in place. Still deferred: expiring JWTs / OAuth, org membership, and
 true abuse-resistance (the PoW is a deterrent, not a wall).
 
-### Current state (2026-07-07) — v0.3.0, live
+## 0.4 — moderation, ops, HF storage, webui deliverable
+
+Scope: everything outstanding **except** S3/MinIO (overkill for now) and Postgres (→ 0.5). A5
+backfill dropped (existing annotators are processed elsewhere).
+
+**Shipped**
+- ✅ **Featured namespaces** — `featured` flag; float to the top of every listing; `?featured=true`
+  restricts. Card carries `featured`. Admin CLI `feature`/`unfeature`.
+- ✅ **Blacklisted namespaces** — hidden from default `GET /modules` + search; reachable via
+  `?namespace=`, `?include_blacklisted=true`, or direct detail. Admin CLI `blacklist`/`unblacklist`.
+- ✅ **Key revocation** — `marketplace revoke-key` / `revoke-account` (closes the leaked-key gap).
+- ✅ **Rate limiting** (SPEC §7) — in-memory token buckets per caller × category on
+  search/download/publish; `429 rate_limited`; configurable, on by default.
+- ✅ **`HfStorage` backend** — HF dataset repo under `data/{ns}/{name}/{version}/…`; writes via a
+  single commit, reads via `HfFileSystem`, `file_url` → HF `resolve` CDN URL so downloads `302`.
+  Selected by `storage_backend=hf`; the startup token guard (0.2.1) gates it. *Live commit/read is
+  integration-tested with a real token + public repo (offline unit tests cover paths/URLs).*
+- ✅ **webui marketplace-page deliverable** — [WEBUI-MARKETPLACE.md](WEBUI-MARKETPLACE.md): the
+  client + response shapes + provenance/onboarding wiring the webui builds its catalog page on.
+
+**Deferred within 0.4 (rationale)** — not blockers; each needs more than a quick pass:
+- **Ed25519 signing** — would put a crypto dep in the *light* client (for verify) and needs
+  server keypair ops; SPEC marks it "Future". Revisit deliberately.
+- **Presigned PUT upload** — mainly matters once large-parquet HF uploads are the norm; multipart is
+  fine now. Pairs with hardening `HfStorage`.
+- **Prebuilt "trust-but-verify" publish** — its digest-compare premise is shaky (parquet isn't
+  byte-deterministic across arrow versions); server recompile already covers the trust need.
+- **Expiring JWTs / OAuth + org membership** — needs a provider/product decision; install-id
+  self-register covers the community MVP.
+- **Download analytics** — beyond the counter; low priority.
+
+**→ 0.5:** Postgres migration; FTS5 / advanced search (grouped as the search-at-scale effort).
+**Excluded:** S3/MinIO.
+
+### Current state (2026-07-07) — v0.4.0, live
 
 **Live** at <https://module-marketplace.just-dna.life>. Depends on the published PyPI packages
 `just-dna-format>=0.1.0` + `just-dna-compiler>=0.1.0`. **39 tests green**; full integration run

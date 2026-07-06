@@ -6,6 +6,31 @@ All notable changes to **just-dna-marketplace**. Format follows
 Full API: [API-REFERENCE.md](API-REFERENCE.md) · client: [CLIENT.md](CLIENT.md) · plan:
 [ROADMAP.md](ROADMAP.md).
 
+## [0.4.0] — 2026-07-07
+
+Moderation, ops hardening, HuggingFace storage, and the webui page deliverable.
+
+### Added
+- **Featured namespaces** — `featured` flag; featured modules float to the top of every listing,
+  `?featured=true` restricts, cards carry `featured`. Admin CLI `feature`/`unfeature`.
+- **Blacklisted namespaces** — hidden from default `GET /modules`/search; reachable via
+  `?namespace=`, `?include_blacklisted=true`, or direct detail. Admin CLI `blacklist`/`unblacklist`.
+  New list filters: `namespace`, `featured`, `include_blacklisted`.
+- **Key revocation** — `marketplace revoke-key` / `revoke-account`.
+- **Rate limiting** (SPEC §7) — in-memory token buckets per caller × category on
+  search/download/publish; `429 rate_limited` + `Retry-After`. Config: `rate_limit_enabled`,
+  `rate_publish_per_hour`, `rate_download_per_hour`, `rate_search_per_min`.
+- **`HfStorage` backend** — HF dataset repo (`data/{ns}/{name}/{version}/…`); commit writes,
+  `HfFileSystem` reads, `302` to HF `resolve` URLs. Select with `storage_backend=hf`.
+- **Docs** — `WEBUI-MARKETPLACE.md` (marketplace-page deliverable for the webui).
+
+### Migrations
+- `namespaces.featured` / `namespaces.blacklisted` columns (idempotent, in-place).
+
+### Deferred (see ROADMAP 0.4)
+- Ed25519 signing, presigned PUT, prebuilt "trust-but-verify" mode, JWT/OAuth + orgs, download
+  analytics. → 0.5: Postgres, FTS5/search. Excluded: S3/MinIO.
+
 ## [0.3.0] — 2026-07-07
 
 Community-first, self-service onboarding — publish from the just-dna-lite UI without leaving the app.
@@ -93,6 +118,7 @@ Initial marketplace service (internal builds; superseded by 0.2.0 packaging).
   `remove-module` / `remove-namespace` (purges DB rows + artifacts, frees the namespace; not yank).
 - `.env.template`, `docs/SPEC.md`, `docs/ROADMAP.md`.
 
+[0.4.0]: #040--2026-07-07
 [0.3.0]: #030--2026-07-07
 [0.2.1]: #021--2026-07-07
 [0.2.0]: #020--2026-07-07

@@ -28,17 +28,18 @@ _request_log = logging.getLogger("marketplace.request")
 def _build_storage(settings: Settings) -> StorageBackend:
     if settings.storage_backend == "local":
         return LocalStorage(settings.local_storage_dir)
-    raise ValueError(
-        f"unsupported storage_backend {settings.storage_backend!r} "
-        "(only 'local' is wired; 'hf' arrives with HfStorage)"
-    )
+    if settings.storage_backend == "hf":
+        from just_dna_marketplace.storage.hf import HfStorage  # imports huggingface_hub lazily
+
+        return HfStorage(settings.hf_repo_id, token=settings.hf_token)
+    raise ValueError(f"unsupported storage_backend {settings.storage_backend!r} (use 'local' or 'hf')")
 
 
 def create_app(settings: Optional[Settings] = None) -> FastAPI:
     settings = settings or get_settings()
     configure_logging(settings)
     validate_hf_access(settings)  # exits(1) if hf backend + missing/read-only token; no-op for local
-    app = FastAPI(title="just-dna-marketplace", version="0.3.0")
+    app = FastAPI(title="just-dna-marketplace", version="0.4.0")
 
     conn = connect(settings.db_path)
     init_db(conn)
