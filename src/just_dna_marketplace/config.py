@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     default_per_page: int = 20
     max_per_page: int = 100
 
+    # Observability. `debug` turns on verbose structured logging to stdout (request tracing +
+    # Eliot publish/import step logs + third-party DEBUG). Off = `log_level` (default INFO).
+    debug: bool = False
+    log_level: str = "INFO"
+
 
 @lru_cache
 def get_settings() -> Settings:

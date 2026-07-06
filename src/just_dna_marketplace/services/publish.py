@@ -19,6 +19,7 @@ import zipfile
 from pathlib import Path
 from typing import Mapping, Optional
 
+from eliot import start_action
 from just_dna_compiler.compiler import compile_module, reverse_module, validate_spec
 from just_dna_format.identity import canonical_id
 from just_dna_format.manifest import (
@@ -94,21 +95,27 @@ def import_archive(
 ) -> ModuleManifest:
     """Publish from a zip/tar.gz archive: a spec archive is compiled directly; a legacy
     parquet-only archive is reverse-engineered (with client-supplied `display` metadata) first."""
-    with tempfile.TemporaryDirectory() as tmp:
-        extracted = Path(tmp) / "extracted"
-        extracted.mkdir()
-        _extract_archive(archive, extracted)
-        root = _module_root(extracted)
-
-        if (root / "module_spec.yaml").is_file():
-            spec_dir = root
-        else:
-            spec_dir = Path(tmp) / "reversed"
-            reverse_module(root, spec_dir, module_name=name, **(_reverse_kwargs(display)))
-        return _finalize(
-            repo=repo, storage=storage, settings=settings, namespace=namespace, name=name,
-            version=version, changelog=changelog, owner=owner, spec_dir=spec_dir,
-        )
+    with start_action(
+        action_type="import_archive", namespace=namespace, name=name, version=version,
+        archive_bytes=len(archive),
+    ) as action:
+        with tempfile.TemporaryDirectory() as tmp:
+            extracted = Path(tmp) / "extracted"
+            extracted.mkdir()
+            _extract_archive(archive, extracted)
+            root = _module_root(extracted)
+            is_spec = (root / "module_spec.yaml").is_file()
+            action.log(message_type="archive_extracted", mode="spec" if is_spec else "reverse",
+                       root=str(root.relative_to(extracted)) or ".")
+            if is_spec:
+                spec_dir = root
+            else:
+                spec_dir = Path(tmp) / "reversed"
+                reverse_module(root, spec_dir, module_name=name, **(_reverse_kwargs(display)))
+            return _finalize(
+                repo=repo, storage=storage, settings=settings, namespace=namespace, name=name,
+                version=version, changelog=changelog, owner=owner, spec_dir=spec_dir,
+            )
 
 
 # ── Core ──────────────────────────────────────────────────────────────────────
@@ -127,55 +134,78 @@ def _finalize(
     spec_dir: Path,
 ) -> ModuleManifest:
     """Validate + recompile a prepared spec dir, store the version, and index it."""
-    validation = validate_spec(spec_dir)
-    if not validation.valid:
-        raise PublishError("invalid_spec", errors=validation.errors, warnings=validation.warnings)
-
-    with tempfile.TemporaryDirectory() as tmp:
-        out_dir = Path(tmp) / "out"
-        result = compile_module(
-            spec_dir,
-            out_dir,
-            resolve_with_ensembl=settings.resolve_with_ensembl,
-            ensembl_cache=settings.ensembl_cache,
-            compiled_by=MARKETPLACE_COMPILED_BY,
-            ensembl_reference=settings.ensembl_reference,
+    with start_action(
+        action_type="publish_finalize", namespace=namespace, name=name, version=version
+    ) as action:
+        validation = validate_spec(spec_dir)
+        action.log(
+            message_type="validated", valid=validation.valid,
+            errors=validation.errors[:20], warnings=validation.warnings[:20],
         )
-        if not result.success or result.manifest is None:
-            raise PublishError("compile_failed", errors=result.errors, warnings=result.warnings)
-
-        manifest = result.manifest
-        if manifest.identity.name != name:
+        if not validation.valid:
             raise PublishError(
-                "name_mismatch",
-                errors=[f"module_spec name {manifest.identity.name!r} != path {name!r}"],
+                "invalid_spec", errors=validation.errors, warnings=validation.warnings
             )
 
-        manifest.identity.namespace = namespace
-        manifest.identity.version = version
-        manifest.identity.canonical_id = canonical_id(namespace, name, version)
-        manifest.owner = owner
-        manifest.published_at = now_iso()
-        write_manifest(manifest, out_dir / "manifest.json")
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = Path(tmp) / "out"
+            result = compile_module(
+                spec_dir,
+                out_dir,
+                resolve_with_ensembl=settings.resolve_with_ensembl,
+                ensembl_cache=settings.ensembl_cache,
+                compiled_by=MARKETPLACE_COMPILED_BY,
+                ensembl_reference=settings.ensembl_reference,
+            )
+            action.log(
+                message_type="compiled", success=result.success,
+                errors=result.errors[:20], warnings=result.warnings[:20],
+            )
+            if not result.success or result.manifest is None:
+                raise PublishError(
+                    "compile_failed", errors=result.errors, warnings=result.warnings
+                )
 
-        # Carry spec inputs (yaml/csv/md/logo) into the module dir; skip parquets (the recompiled
-        # ones in out_dir are authoritative) and anything compile already produced (logs).
-        for src in spec_dir.rglob("*"):
-            if not src.is_file() or src.suffix == ".parquet":
-                continue
-            dest = out_dir / src.relative_to(spec_dir).as_posix()
-            if not dest.exists():
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(src, dest)
+            manifest = result.manifest
+            if manifest.identity.name != name:
+                raise PublishError(
+                    "name_mismatch",
+                    errors=[f"module_spec name {manifest.identity.name!r} != path {name!r}"],
+                )
 
-        stored = {
-            p.relative_to(out_dir).as_posix(): p.read_bytes()
-            for p in out_dir.rglob("*")
-            if p.is_file()
-        }
-        storage.store_module(version_key(namespace, name, version), stored)
-        ingest_manifest(repo, manifest, changelog=changelog)
-        return manifest
+            manifest.identity.namespace = namespace
+            manifest.identity.version = version
+            manifest.identity.canonical_id = canonical_id(namespace, name, version)
+            manifest.owner = owner
+            manifest.published_at = now_iso()
+            write_manifest(manifest, out_dir / "manifest.json")
+
+            # Carry spec inputs (yaml/csv/md/logo) into the module dir; skip parquets (the
+            # recompiled ones in out_dir are authoritative) and anything compile produced (logs).
+            for src in spec_dir.rglob("*"):
+                if not src.is_file() or src.suffix == ".parquet":
+                    continue
+                dest = out_dir / src.relative_to(spec_dir).as_posix()
+                if not dest.exists():
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(src, dest)
+
+            stored = {
+                p.relative_to(out_dir).as_posix(): p.read_bytes()
+                for p in out_dir.rglob("*")
+                if p.is_file()
+            }
+            key = version_key(namespace, name, version)
+            storage.store_module(key, stored)
+            ingest_manifest(repo, manifest, changelog=changelog)
+            action.add_success_fields(
+                digest=manifest.artifact.digest,
+                storage_key=key,
+                n_files=len(stored),
+                variant_count=manifest.stats.variant_count,
+                logs=[e.name for e in manifest.logs],
+            )
+            return manifest
 
 
 # ── Archive helpers ─────────────────────────────────────────────────────────────
