@@ -50,7 +50,7 @@ class MarketplaceClient:
         self,
         base_url: str,
         token: Optional[str] = None,
-        timeout: float = 120.0,
+        timeout: float = 600.0,  # publishes recompile server-side; large modules take minutes
         transport: Optional[httpx.BaseTransport] = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")

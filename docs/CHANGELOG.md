@@ -6,6 +6,22 @@ All notable changes to **just-dna-marketplace**. Format follows
 Full API: [API-REFERENCE.md](API-REFERENCE.md) · client: [CLIENT.md](CLIENT.md) · plan:
 [ROADMAP.md](ROADMAP.md).
 
+## [0.4.3] — 2026-07-07
+
+### Fixed
+- **Publish no longer blocks the event loop.** `compile_module` (CPU-heavy — up to minutes for
+  large modules) now runs in a worker thread (`run_in_threadpool`) instead of synchronously in the
+  async handler. Previously a big publish froze the whole server for the duration and the
+  connection was dropped mid-request (`RemoteProtocolError: Server disconnected`), even though the
+  compile eventually finished with 201. Fixes publishing large modules (e.g. `pathogenic`, ~89 s).
+- SQLite `busy_timeout=5000` to absorb brief write contention now that publishes run concurrently.
+
+### Changed
+- Client HTTP timeout default 120 s → **600 s**, and env-configurable via `MARKETPLACE_TIMEOUT`.
+
+> Deployment note: a reverse proxy in front of the server (Caddy) must also allow long upstream
+> responses for large publishes; otherwise it will cut the connection before the compile finishes.
+
 ## [0.4.2] — 2026-07-07
 
 ### Added
@@ -139,6 +155,7 @@ Initial marketplace service (internal builds; superseded by 0.2.0 packaging).
   `remove-module` / `remove-namespace` (purges DB rows + artifacts, frees the namespace; not yank).
 - `.env.template`, `docs/SPEC.md`, `docs/ROADMAP.md`.
 
+[0.4.3]: #043--2026-07-07
 [0.4.2]: #042--2026-07-07
 [0.4.1]: #041--2026-07-07
 [0.4.0]: #040--2026-07-07

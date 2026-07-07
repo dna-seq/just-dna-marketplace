@@ -12,6 +12,7 @@ from typing import Annotated, Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from just_dna_format.identity import is_valid_version
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
 from just_dna_marketplace.api.deps import (
     Account,
@@ -69,7 +70,10 @@ async def publish(
 
     uploads = {f.filename: await f.read() for f in files if f.filename}
     try:
-        manifest = publish_service.publish_version(
+        # compile_module is CPU-heavy (seconds→minutes for large modules) — run it off the event
+        # loop so one publish doesn't freeze the server (and drop the connection).
+        manifest = await run_in_threadpool(
+            publish_service.publish_version,
             repo=repo,
             storage=storage,
             settings=settings,
@@ -122,7 +126,8 @@ async def import_archive(
 
     data = await archive.read()
     try:
-        manifest = publish_service.import_archive(
+        manifest = await run_in_threadpool(
+            publish_service.import_archive,
             repo=repo,
             storage=storage,
             settings=settings,

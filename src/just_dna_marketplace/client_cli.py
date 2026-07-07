@@ -31,7 +31,8 @@ def _client(url: Optional[str], token: Optional[str], *, need_token: bool = Fals
     tok = token or os.getenv(_TOKEN_ENV)
     if need_token and not tok:
         raise typer.BadParameter(f"a token is required (pass --token or set ${_TOKEN_ENV})")
-    return MarketplaceClient(base, tok)
+    timeout = float(os.getenv("MARKETPLACE_TIMEOUT", "600"))  # big modules recompile for minutes
+    return MarketplaceClient(base, tok, timeout=timeout)
 
 
 UrlOpt = typer.Option(None, "--url", help=f"Marketplace base URL (or ${_URL_ENV})")
