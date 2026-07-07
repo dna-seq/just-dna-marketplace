@@ -242,6 +242,29 @@ class Repository:
         self.recompute_latest(int(module["id"]))
         return True
 
+    def get_version_changelog(self, namespace: str, name: str, version: str) -> Optional[str]:
+        """The version's changelog, or None if the version doesn't exist ('' is a valid value)."""
+        row = self.conn.execute(
+            "SELECT v.changelog FROM versions v JOIN modules m ON m.id = v.module_id "
+            "WHERE m.namespace = ? AND m.name = ? AND v.version = ?",
+            (namespace, name, version),
+        ).fetchone()
+        return row["changelog"] if row else None
+
+    def set_version_changelog(
+        self, namespace: str, name: str, version: str, changelog: str
+    ) -> bool:
+        """Amend a version's changelog (metadata only — never touches the artifact/digest)."""
+        module = self.get_module_row(namespace, name)
+        if module is None:
+            return False
+        cur = self.conn.execute(
+            "UPDATE versions SET changelog = ? WHERE module_id = ? AND version = ?",
+            (changelog, module["id"], version),
+        )
+        self.conn.commit()
+        return cur.rowcount > 0
+
     def increment_downloads(self, namespace: str, name: str) -> None:
         self.conn.execute(
             "UPDATE modules SET downloads = downloads + 1 WHERE namespace = ? AND name = ?",

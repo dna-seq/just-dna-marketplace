@@ -39,6 +39,11 @@ class YankRequest(BaseModel):
     yanked: bool = True
 
 
+class ChangelogPatch(BaseModel):
+    changelog: str
+    append: bool = False  # append to the existing changelog instead of replacing it
+
+
 @router.post(
     "/{namespace}/{name}/versions",
     status_code=status.HTTP_201_CREATED,
@@ -141,6 +146,26 @@ async def import_archive(
             detail={"error": exc.detail, "errors": exc.errors, "warnings": exc.warnings},
         )
     return manifest.model_dump()
+
+
+@router.patch("/{namespace}/{name}/versions/{version}")
+def amend_changelog(
+    repo: RepoDep,
+    account: AccountDep,
+    namespace: str,
+    name: str,
+    version: str,
+    body: ChangelogPatch,
+) -> dict:
+    """Amend a published version's changelog. Metadata only — the artifact/digest are immutable
+    and untouched. Owner-only. `append=true` adds to the existing changelog."""
+    require_namespace_member(account, namespace)
+    current = repo.get_version_changelog(namespace, name, version)
+    if current is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="version_not_found")
+    changelog = f"{current}\n{body.changelog}" if (body.append and current) else body.changelog
+    repo.set_version_changelog(namespace, name, version, changelog)
+    return {"namespace": namespace, "name": name, "version": version, "changelog": changelog}
 
 
 @router.post("/{namespace}/{name}/versions/{version}/yank")

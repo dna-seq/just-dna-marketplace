@@ -190,6 +190,22 @@ def find_by_hash(
         typer.echo(f"  {m['namespace']}/{m['name']}@{m['version']}{flag}")
 
 
+@app.command("amend-changelog")
+def amend_changelog(
+    namespace: str,
+    name: str,
+    version: str,
+    changelog: str,
+    append: bool = typer.Option(False, "--append", help="Append to the existing changelog"),
+    url: Optional[str] = UrlOpt,
+    token: Optional[str] = TokenOpt,
+) -> None:
+    """Amend a published version's changelog (metadata only; the artifact stays immutable)."""
+    with _client(url, token, need_token=True) as c:
+        result = c.amend_changelog(namespace, name, version, changelog, append=append)
+    typer.echo(f"✓ {namespace}/{name}@{version} changelog updated:\n{result['changelog']}")
+
+
 @app.command("update-module-version")
 def update_module_version(
     namespace: str,

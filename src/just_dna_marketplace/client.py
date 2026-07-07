@@ -192,6 +192,16 @@ class MarketplaceClient:
         )
         return ModuleManifest.model_validate(self._json(resp))
 
+    def amend_changelog(
+        self, namespace: str, name: str, version: str, changelog: str, *, append: bool = False
+    ) -> dict:
+        """Amend a published version's changelog (metadata only; owner token). Returns the new state."""
+        resp = self._http.patch(
+            f"/modules/{namespace}/{name}/versions/{version}",
+            json={"changelog": changelog, "append": append},
+        )
+        return self._json(resp)
+
     def get_tarball(self, namespace: str, name: str, version: str, dest: Path) -> Path:
         """Download a version as a single streamable `tar.gz` to `dest`. Returns the path."""
         resp = self._http.get(

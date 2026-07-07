@@ -78,6 +78,7 @@ Publish/import `422.error` codes: `missing_spec_files`, `invalid_spec` (carries
 | 16 | POST | `/api/v1/namespaces` | bearer | Claim an available namespace |
 | 17 | POST | `/api/v1/modules/lookup` | — | Batch digest lookup |
 | 18 | POST | `/api/v1/auth/tokens` | api key | Exchange an API key for a JWT (optional) |
+| 19 | PATCH | `/api/v1/modules/{ns}/{name}/versions/{v}` | bearer | Amend the version changelog (metadata) |
 
 ---
 
@@ -192,6 +193,13 @@ Yank drops the version from default listings and `latest` but keeps its manifest
 fetchable; `latest_version` recomputes over the remaining non-yanked versions.
 
 `200 → {"namespace","name","version","yanked"}`. Errors: `401`, `403`, `404 version_not_found`.
+
+### 19. `PATCH /api/v1/modules/{ns}/{name}/versions/{v}`  *(bearer)*
+Amend a published version's **changelog** — descriptive metadata only; the artifact and its
+`digest` are immutable and untouched (this is *not* a re-publish). Owner-only. Body
+`{"changelog": "…", "append": false}` (`append=true` adds to the existing changelog).
+`200 → {"namespace","name","version","changelog"}`. Errors: `401`, `403 not_namespace_member`,
+`404 version_not_found`.
 
 ### 13. `GET /api/v1/auth/whoami`  *(bearer)*
 `200 → {"account": "just-dna-seq", "namespaces": ["just-dna-seq"]}`. `401` on missing/invalid token.

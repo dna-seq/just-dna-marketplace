@@ -46,6 +46,7 @@ export MARKETPLACE_TOKEN=mk_live_…
 | Publish (spec dir) | `publish(ns, name, v, spec_dir)` | `publish` | bearer |
 | Publish (archive) | `import_module(ns, name, v, archive)` | `import-module` | bearer |
 | Bump a version | *(`get_module` + `publish`)* | `update-module-version` | bearer |
+| Amend changelog | `amend_changelog(ns, name, v, text, append=)` | `amend-changelog` | bearer |
 
 ---
 

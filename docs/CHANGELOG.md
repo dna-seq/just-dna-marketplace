@@ -6,6 +6,13 @@ All notable changes to **just-dna-marketplace**. Format follows
 Full API: [API-REFERENCE.md](API-REFERENCE.md) · client: [CLIENT.md](CLIENT.md) · plan:
 [ROADMAP.md](ROADMAP.md).
 
+## [0.4.2] — 2026-07-07
+
+### Added
+- **Amend changelog** — `PATCH /modules/{ns}/{name}/versions/{v}` updates a published version's
+  changelog (metadata only; the artifact/digest stay immutable — not a re-publish). Owner-only,
+  `append` option. Client `amend_changelog(...)` + CLI `amend-changelog`.
+
 ## [0.4.1] — 2026-07-07
 
 ### Added
@@ -132,6 +139,7 @@ Initial marketplace service (internal builds; superseded by 0.2.0 packaging).
   `remove-module` / `remove-namespace` (purges DB rows + artifacts, frees the namespace; not yank).
 - `.env.template`, `docs/SPEC.md`, `docs/ROADMAP.md`.
 
+[0.4.2]: #042--2026-07-07
 [0.4.1]: #041--2026-07-07
 [0.4.0]: #040--2026-07-07
 [0.3.0]: #030--2026-07-07
