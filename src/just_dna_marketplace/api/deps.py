@@ -12,6 +12,7 @@ from fastapi import Depends, Header, HTTPException, Query, Request, status
 
 from just_dna_marketplace.config import Settings
 from just_dna_marketplace.db.repository import Repository
+from just_dna_marketplace.jwtauth import decode_jwt
 from just_dna_marketplace.storage.base import StorageBackend
 
 
@@ -54,25 +55,33 @@ def pagination(
 
 def require_account(
     repo: Annotated[Repository, Depends(get_repo)],
+    settings: Annotated[Settings, Depends(settings_dep)],
     authorization: Annotated[Optional[str], Header()] = None,
 ) -> Account:
-    """Resolve the bearer API key to an account, or 401."""
+    """Resolve the bearer credential to an account, or 401.
+
+    Accepts a static API key (tried first — unchanged behaviour) or, when JWT is enabled, a JWT
+    session token minted by `POST /auth/tokens`.
+    """
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED,
             detail="missing_bearer_token",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    key = authorization.split(" ", 1)[1].strip()
-    row = repo.account_for_key(key)
-    if row is None:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="invalid_token")
-    account_id = int(row["id"])
-    return Account(
-        id=account_id,
-        name=row["name"],
-        namespaces=repo.namespaces_for_account(account_id),
-    )
+    token = authorization.split(" ", 1)[1].strip()
+
+    row = repo.account_for_key(token)  # static API key
+    if row is not None:
+        account_id = int(row["id"])
+        return Account(account_id, row["name"], repo.namespaces_for_account(account_id))
+
+    claims = decode_jwt(settings, token)  # optional JWT session
+    if claims is not None:
+        account_id = int(claims["account_id"])
+        return Account(account_id, claims["sub"], repo.namespaces_for_account(account_id))
+
+    raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="invalid_token")
 
 
 def require_namespace_member(account: Account, namespace: str) -> None:

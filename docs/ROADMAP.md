@@ -100,15 +100,23 @@ backfill dropped (existing annotators are processed elsewhere).
 - ✅ **webui marketplace-page deliverable** — [WEBUI-MARKETPLACE.md](WEBUI-MARKETPLACE.md): the
   client + response shapes + provenance/onboarding wiring the webui builds its catalog page on.
 
+- ✅ **Optional JWT sessions** — `POST /auth/tokens` exchanges a static API key for a short-lived
+  JWT that's also accepted as a bearer. Off unless `jwt_secret` is set; static keys always work
+  (backwards-compatible, 0.4 behaviour unchanged).
+
+**Dropped (planning legacy).** The **prebuilt-parquet upload / "trust-but-verify"** mode is gone:
+it only existed so the marketplace could avoid bundling the compiler — but we recompile server-side
+now, so there's no prebuilt artifact to ingest. (If we ever need to *check reproducibility* of two
+compiles, compare parquet **frame-shape + canonically-sorted content** rather than byte digests —
+parquet isn't byte-deterministic across arrow versions. Not needed today.)
+
 **Deferred within 0.4 (rationale)** — not blockers; each needs more than a quick pass:
 - **Ed25519 signing** — would put a crypto dep in the *light* client (for verify) and needs
   server keypair ops; SPEC marks it "Future". Revisit deliberately.
 - **Presigned PUT upload** — mainly matters once large-parquet HF uploads are the norm; multipart is
   fine now. Pairs with hardening `HfStorage`.
-- **Prebuilt "trust-but-verify" publish** — its digest-compare premise is shaky (parquet isn't
-  byte-deterministic across arrow versions); server recompile already covers the trust need.
-- **Expiring JWTs / OAuth + org membership** — needs a provider/product decision; install-id
-  self-register covers the community MVP.
+- **OAuth + org membership** — needs a provider/product decision; install-id self-register + optional
+  JWT cover the community MVP.
 - **Download analytics** — beyond the counter; low priority.
 
 **→ 0.5:** Postgres migration; FTS5 / advanced search (grouped as the search-at-scale effort).

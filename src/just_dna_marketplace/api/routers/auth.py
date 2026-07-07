@@ -16,6 +16,7 @@ from just_dna_marketplace.api.deps import (
 from just_dna_marketplace.config import Settings
 from just_dna_marketplace.db.repository import Repository
 from just_dna_marketplace.installid import validate_install_id
+from just_dna_marketplace.jwtauth import issue_jwt, jwt_enabled
 from just_dna_marketplace.models.api import WhoAmI
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -29,9 +30,25 @@ class RegisterRequest(BaseModel):
     account: str
 
 
+class TokenRequest(BaseModel):
+    api_key: str
+
+
 @router.get("/whoami", response_model=WhoAmI)
 def whoami(account: Annotated[Account, Depends(require_account)]) -> WhoAmI:
     return WhoAmI(account=account.name, namespaces=account.namespaces)
+
+
+@router.post("/tokens")
+def issue_token(repo: RepoDep, settings: SettingsDep, body: TokenRequest) -> dict:
+    """Exchange a static API key for a short-lived JWT session (optional; needs `jwt_secret`)."""
+    if not jwt_enabled(settings):
+        raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, detail="jwt_disabled")
+    row = repo.account_for_key(body.api_key)
+    if row is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="invalid_token")
+    token, expires_in = issue_jwt(settings, account_id=int(row["id"]), name=row["name"])
+    return {"token": token, "token_type": "Bearer", "expires_in": expires_in}
 
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)

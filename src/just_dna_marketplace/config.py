@@ -62,6 +62,12 @@ class Settings(BaseSettings):
     rate_download_per_hour: float = 1000
     rate_search_per_min: float = 60
 
+    # Optional JWT sessions (backwards-compatible). Static API keys always work; if `jwt_secret`
+    # is set, POST /auth/tokens exchanges a key for a short-lived JWT that's also accepted as a
+    # bearer. Unset (default) → JWT disabled, static-keys-only (0.4 behaviour unchanged).
+    jwt_secret: str | None = None  # use ≥32 bytes (HS256); unset = JWT off
+    jwt_ttl_seconds: int = 86400
+
     # Observability. `debug` turns on verbose structured logging to stdout (request tracing +
     # Eliot publish/import step logs + third-party DEBUG). Off = `log_level` (default INFO).
     debug: bool = False

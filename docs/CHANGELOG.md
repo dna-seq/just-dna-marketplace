@@ -6,6 +6,20 @@ All notable changes to **just-dna-marketplace**. Format follows
 Full API: [API-REFERENCE.md](API-REFERENCE.md) · client: [CLIENT.md](CLIENT.md) · plan:
 [ROADMAP.md](ROADMAP.md).
 
+## [0.4.1] — 2026-07-07
+
+### Added
+- **Optional JWT sessions** — `POST /auth/tokens` exchanges a static API key for a short-lived JWT,
+  also accepted as a bearer. Backwards-compatible: static keys always work; JWT is off unless
+  `jwt_secret` (≥32 bytes) is set (`501 jwt_disabled` otherwise). Config: `jwt_secret`,
+  `jwt_ttl_seconds`.
+
+### Removed
+- **Prebuilt-parquet upload / "trust-but-verify" mode** — dropped as planning legacy. It existed to
+  avoid bundling the compiler, but the server recompiles from spec, so there's no prebuilt artifact
+  to ingest. (Reproducibility, if ever needed, is better checked via parquet frame-shape +
+  canonically-sorted content than byte digests.)
+
 ## [0.4.0] — 2026-07-07
 
 Moderation, ops hardening, HuggingFace storage, and the webui page deliverable.
@@ -118,6 +132,7 @@ Initial marketplace service (internal builds; superseded by 0.2.0 packaging).
   `remove-module` / `remove-namespace` (purges DB rows + artifacts, frees the namespace; not yank).
 - `.env.template`, `docs/SPEC.md`, `docs/ROADMAP.md`.
 
+[0.4.1]: #041--2026-07-07
 [0.4.0]: #040--2026-07-07
 [0.3.0]: #030--2026-07-07
 [0.2.1]: #021--2026-07-07

@@ -17,9 +17,14 @@ Static API keys via a bearer header:
 Authorization: Bearer mk_live_…
 ```
 
-Keys are minted server-side with `marketplace issue-key <account> -n <namespace>`. A key's account
-owns one or more **namespaces**; publishing/yanking under a namespace requires ownership. **Reads
-are anonymous;** only publish, import, yank, and `whoami` require a token.
+Keys are minted server-side with `marketplace issue-key <account> -n <namespace>` (or self-service
+via `POST /auth/register`). A key's account owns one or more **namespaces**; publishing/yanking
+under a namespace requires ownership. **Reads are anonymous;** only publish, import, yank, and
+`whoami` require a token.
+
+**Optional JWT sessions.** When the server sets `jwt_secret`, `POST /auth/tokens` exchanges an API
+key for a short-lived JWT that is also accepted as a bearer. Static API keys always work — JWT is
+purely additive; if `jwt_secret` is unset, `POST /auth/tokens` returns `501 jwt_disabled`.
 
 ## Pagination
 
@@ -72,6 +77,7 @@ Publish/import `422.error` codes: `missing_spec_files`, `invalid_spec` (carries
 | 15 | GET | `/api/v1/namespaces/{ns}` | — | Namespace availability |
 | 16 | POST | `/api/v1/namespaces` | bearer | Claim an available namespace |
 | 17 | POST | `/api/v1/modules/lookup` | — | Batch digest lookup |
+| 18 | POST | `/api/v1/auth/tokens` | api key | Exchange an API key for a JWT (optional) |
 
 ---
 
@@ -189,6 +195,11 @@ fetchable; `latest_version` recomputes over the remaining non-yanked versions.
 
 ### 13. `GET /api/v1/auth/whoami`  *(bearer)*
 `200 → {"account": "just-dna-seq", "namespaces": ["just-dna-seq"]}`. `401` on missing/invalid token.
+
+### 18. `POST /api/v1/auth/tokens`
+Optional JWT session. Body `{"api_key": "mk_live_…"}`. `200 → {"token": "<jwt>", "token_type":
+"Bearer", "expires_in": 86400}`. Errors: `501 jwt_disabled` (no `jwt_secret` configured),
+`401 invalid_token` (unknown API key). The returned JWT is accepted anywhere a bearer is.
 
 ### 14. `POST /api/v1/auth/register`
 Self-service onboarding (community-first). Body `{"install_id": "jdi1_…", "account": "alice"}`.
