@@ -67,6 +67,14 @@ def test_revalidate_flags_drifted_version(client: TestClient, api_key: str, app)
     assert versions["items"][0]["artifact_digest"] == manifest.artifact.digest
 
 
+def test_revalidate_skips_when_inputs_missing_from_storage(client: TestClient, api_key: str, app) -> None:
+    # Manifest lists inputs, but the bytes aren't retrievable → skip, never a false needs_upgrade.
+    manifest = _publish(client, api_key)
+    app.state.storage.remove(version_key("just-dna-seq", "coronary", "1.0.0"))
+    status, _ = revalidate_version(app.state.storage, "just-dna-seq", "coronary", "1.0.0", manifest)
+    assert status == "skipped"
+
+
 def test_revalidate_skips_when_no_inputs(seed, app) -> None:
     manifest = seed(
         "just-dna-seq", "coronary", "1.0.0", genes=["LPA"], categories=["cardio"],

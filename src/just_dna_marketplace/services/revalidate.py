@@ -31,14 +31,18 @@ def revalidate_version(
     inputs aren't retrievable — e.g. a legacy import that shipped no inputs; not counted as a fail).
     """
     key = version_key(namespace, name, version)
-    available = [e.name for e in manifest.inputs if e.name in _SPEC_INPUTS]
-    if "module_spec.yaml" not in available or "variants.csv" not in available:
+    # Base on what's actually retrievable from storage (not just what the manifest lists), so a
+    # missing artifact can't masquerade as a contract failure.
+    present = [
+        n for n in _SPEC_INPUTS
+        if any(e.name == n for e in manifest.inputs) and storage.exists(key, n)
+    ]
+    if "module_spec.yaml" not in present or "variants.csv" not in present:
         return "skipped", ["spec inputs not available for revalidation"]
     with tempfile.TemporaryDirectory() as tmp:
         spec = Path(tmp)
-        for iname in available:
-            if storage.exists(key, iname):
-                (spec / iname).write_bytes(storage.read_file(key, iname))
+        for iname in present:
+            (spec / iname).write_bytes(storage.read_file(key, iname))
         result = validate_spec(spec)
     return ("ok" if result.valid else "needs_upgrade"), result.errors
 

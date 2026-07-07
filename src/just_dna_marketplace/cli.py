@@ -24,6 +24,10 @@ app = typer.Typer(help="just-dna-marketplace admin CLI", no_args_is_help=True)
 def _storage(settings: Settings) -> StorageBackend:
     if settings.storage_backend == "local":
         return LocalStorage(settings.local_storage_dir)
+    if settings.storage_backend == "hf":
+        from just_dna_marketplace.storage.hf import HfStorage  # imports huggingface_hub lazily
+
+        return HfStorage(settings.hf_repo_id, token=settings.hf_token)
     raise typer.BadParameter(f"unsupported storage_backend {settings.storage_backend!r}")
 
 
@@ -163,7 +167,9 @@ def revalidate(
     and untouched; with `--set-flag` failing versions are marked `needs_upgrade` so listings surface
     them and an upgrade (re-publish as a new PATCH) can be scheduled. See docs/UPGRADE.md."""
     settings = get_settings()
-    repo = Repository(connect(settings.db_path))
+    conn = connect(settings.db_path)
+    init_db(conn)  # idempotent: ensures the needs_upgrade column exists on a pre-0.5.0 DB
+    repo = Repository(conn)
     storage = _storage(settings)
     ok = failed = skipped = 0
     for row in repo.list_all_versions(namespace):
