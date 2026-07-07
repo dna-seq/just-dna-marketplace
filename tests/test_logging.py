@@ -25,6 +25,6 @@ def test_app_boots_and_traces_requests_in_debug(tmp_path: Path, capsys) -> None:
         Settings(debug=True, db_path=tmp_path / "m.db", local_storage_dir=tmp_path / "a")
     )
     client = TestClient(app)
-    assert client.get("/health").json() == {"status": "ok"}
+    assert client.get("/health").json()["status"] == "ok"
     out = capsys.readouterr().out
     assert "GET /health -> 200" in out  # request tracing lands on stdout in debug

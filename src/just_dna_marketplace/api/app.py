@@ -12,6 +12,7 @@ from typing import Optional
 
 from fastapi import FastAPI, Request
 
+from just_dna_marketplace import __version__
 from just_dna_marketplace.api.routers import auth, modules, namespaces, publish
 from just_dna_marketplace.config import API_PREFIX, Settings, get_settings
 from just_dna_marketplace.db.repository import Repository
@@ -39,7 +40,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     settings = settings or get_settings()
     configure_logging(settings)
     validate_hf_access(settings)  # exits(1) if hf backend + missing/read-only token; no-op for local
-    app = FastAPI(title="just-dna-marketplace", version="0.4.4")
+    app = FastAPI(title="just-dna-marketplace", version=__version__)
 
     conn = connect(settings.db_path)
     init_db(conn)
@@ -78,7 +79,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
 
     @app.get("/health", tags=["ops"])
     def health() -> dict:
-        return {"status": "ok"}
+        return {"status": "ok", "version": __version__, "storage": settings.storage_backend}
 
     return app
 

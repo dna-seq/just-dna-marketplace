@@ -6,6 +6,21 @@ All notable changes to **just-dna-marketplace**. Format follows
 Full API: [API-REFERENCE.md](API-REFERENCE.md) · client: [CLIENT.md](CLIENT.md) · plan:
 [ROADMAP.md](ROADMAP.md).
 
+## [0.4.5] — 2026-07-07
+
+### Added
+- **`GET /health` now reports `version` and `storage`** — so you can confirm which build is live
+  without shell access to the box (`{"status":"ok","version":"0.4.5","storage":"hf"}`). The version
+  is read from installed package metadata (`importlib.metadata`), not hardcoded — the FastAPI
+  `app.version` (and `/openapi.json`) track it automatically on every bump.
+
+### Note
+- This does **not** change the large-publish path. A publish still couples one HTTP connection to
+  the full server-side compile (~90 s for genome-wide modules); if that connection is severed
+  (proxy header-timeout, or the worker dying — e.g. OOM on a 674k-variant compile) the client sees
+  `RemoteProtocolError: Server disconnected`. Decoupling publish (`202` + background compile + poll)
+  is tracked in ROADMAP 0.5.
+
 ## [0.4.4] — 2026-07-07
 
 ### Added
@@ -163,6 +178,7 @@ Initial marketplace service (internal builds; superseded by 0.2.0 packaging).
   `remove-module` / `remove-namespace` (purges DB rows + artifacts, frees the namespace; not yank).
 - `.env.template`, `docs/SPEC.md`, `docs/ROADMAP.md`.
 
+[0.4.5]: #045--2026-07-07
 [0.4.4]: #044--2026-07-07
 [0.4.3]: #043--2026-07-07
 [0.4.2]: #042--2026-07-07

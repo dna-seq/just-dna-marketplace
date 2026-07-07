@@ -15,6 +15,8 @@ The server (FastAPI app, compiler, storage, admin CLI) is an optional extra —
 ``pip install just-dna-marketplace[server]``.
 """
 
+from importlib.metadata import PackageNotFoundError, version as _pkg_version
+
 from just_dna_marketplace.client import (  # noqa: F401  (public re-exports)
     MarketplaceClient,
     MarketplaceError,
@@ -24,3 +26,8 @@ from just_dna_marketplace.installid import (  # noqa: F401
     generate_install_id,
     validate_install_id,
 )
+
+try:
+    __version__ = _pkg_version("just-dna-marketplace")
+except PackageNotFoundError:  # running from a source tree without an installed dist
+    __version__ = "0.0.0+unknown"

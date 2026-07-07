@@ -21,7 +21,10 @@ def seeded(seed: Callable[..., ModuleManifest]) -> None:
 
 
 def test_health(client: TestClient) -> None:
-    assert client.get("/health").json() == {"status": "ok"}
+    body = client.get("/health").json()
+    assert body["status"] == "ok"
+    assert body["version"]  # reported from package metadata, surfaces the live build
+    assert body["storage"] in {"local", "hf"}
 
 
 def test_list_empty(client: TestClient) -> None:
