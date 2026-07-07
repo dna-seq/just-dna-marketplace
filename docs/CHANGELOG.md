@@ -6,6 +6,14 @@ All notable changes to **just-dna-marketplace**. Format follows
 Full API: [API-REFERENCE.md](API-REFERENCE.md) · client: [CLIENT.md](CLIENT.md) · plan:
 [ROADMAP.md](ROADMAP.md).
 
+## [0.4.4] — 2026-07-07
+
+### Added
+- **`marketplace remove-version <ns> <name> <v>`** — ops-only hard delete of a *single* version
+  (row + facet rows + artifacts), recomputing the module's latest. Complements the whole-module
+  `remove-module` and per-version `yank` — for surgically dropping one bad/partial version so it can
+  be re-uploaded. `repo.delete_version(...)`.
+
 ## [0.4.3] — 2026-07-07
 
 ### Fixed
@@ -155,6 +163,7 @@ Initial marketplace service (internal builds; superseded by 0.2.0 packaging).
   `remove-module` / `remove-namespace` (purges DB rows + artifacts, frees the namespace; not yank).
 - `.env.template`, `docs/SPEC.md`, `docs/ROADMAP.md`.
 
+[0.4.4]: #044--2026-07-07
 [0.4.3]: #043--2026-07-07
 [0.4.2]: #042--2026-07-07
 [0.4.1]: #041--2026-07-07

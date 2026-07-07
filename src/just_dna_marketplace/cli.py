@@ -69,6 +69,23 @@ def remove_module(
     typer.echo(f"removed {namespace}/{name} ({len(versions)} version(s): {versions})")
 
 
+@app.command("remove-version")
+def remove_version(
+    namespace: str, name: str, version: str, yes: bool = typer.Option(False, "--yes", "-y")
+) -> None:
+    """Hard-delete a single version + its artifacts (not yank). Frees it for re-upload."""
+    settings = get_settings()
+    repo = Repository(connect(settings.db_path))
+    storage = _storage(settings)
+    if not yes:
+        typer.confirm(f"Hard-delete {namespace}/{name}@{version} and its artifacts?", abort=True)
+    if not repo.delete_version(namespace, name, version):
+        typer.echo(f"not found: {namespace}/{name}@{version}")
+        raise typer.Exit(code=1)
+    storage.remove(f"{namespace}/{name}/{version}")
+    typer.echo(f"removed {namespace}/{name}@{version}")
+
+
 @app.command("remove-namespace")
 def remove_namespace(namespace: str, yes: bool = typer.Option(False, "--yes", "-y")) -> None:
     """Hard-delete every module under a namespace + its artifacts, and free the namespace so a new

@@ -138,6 +138,21 @@ class Repository:
         self.conn.commit()
         return versions
 
+    def delete_version(self, namespace: str, name: str, version: str) -> bool:
+        """Hard-delete a single version (cascades its facet rows) and recompute the module's
+        latest. Returns False if the module/version didn't exist. Ops-only — not the public API."""
+        module = self.get_module_row(namespace, name)
+        if module is None:
+            return False
+        cur = self.conn.execute(
+            "DELETE FROM versions WHERE module_id = ? AND version = ?", (module["id"], version)
+        )
+        self.conn.commit()
+        if cur.rowcount == 0:
+            return False
+        self.recompute_latest(int(module["id"]))
+        return True
+
     def delete_namespace_grant(self, namespace: str) -> None:
         """Free a namespace's ownership so a new key can claim it."""
         self.conn.execute("DELETE FROM namespaces WHERE name = ?", (namespace,))

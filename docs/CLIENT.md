@@ -200,6 +200,7 @@ marketplace revoke-key <key>                            # invalidate a leaked ke
 marketplace revoke-account <account> [--yes]            # invalidate all of an account's keys
 marketplace feature <ns> / unfeature <ns>               # curate: float a namespace to the top
 marketplace blacklist <ns> / unblacklist <ns>           # moderate: hide from default listings
-marketplace remove-module <ns> <name> [--yes]           # ops-only hard delete (not yank)
+marketplace remove-version <ns> <name> <v> [--yes]      # hard-delete ONE version (not yank)
+marketplace remove-module <ns> <name> [--yes]           # hard-delete a whole module (all versions)
 marketplace remove-namespace <ns> [--yes]               # purge + free the namespace
 ```

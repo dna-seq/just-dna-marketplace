@@ -29,6 +29,28 @@ def test_remove_module_purges_db_and_storage(
     assert repo.conn.execute("SELECT count(*) FROM version_categories").fetchone()[0] == 0
 
 
+def test_remove_version_keeps_other_versions(
+    app, repo: Repository, seed: Callable[..., ModuleManifest]
+) -> None:
+    seed("just-dna-seq", "pathogenic", "1.0.0", genes=["BRCA1"], categories=["clinvar"],
+         created_at="2025-01-01T00:00:00Z")
+    seed("just-dna-seq", "pathogenic", "1.1.0", genes=["BRCA1", "TP53"], categories=["clinvar"],
+         created_at="2025-06-01T00:00:00Z")
+    storage = app.state.storage
+
+    assert repo.delete_version("just-dna-seq", "pathogenic", "1.1.0") is True
+    storage.remove("just-dna-seq/pathogenic/1.1.0")
+
+    assert not repo.version_exists("just-dna-seq", "pathogenic", "1.1.0")
+    assert repo.version_exists("just-dna-seq", "pathogenic", "1.0.0")  # sibling kept
+    # latest recomputed down to the surviving version.
+    assert repo.get_module_row("just-dna-seq", "pathogenic")["latest_version"] == "1.0.0"
+    assert not storage.exists("just-dna-seq/pathogenic/1.1.0", "weights.parquet")
+    assert storage.exists("just-dna-seq/pathogenic/1.0.0", "weights.parquet")
+    # unknown version → False
+    assert repo.delete_version("just-dna-seq", "pathogenic", "9.9.9") is False
+
+
 def test_remove_namespace_frees_it_for_reuse(
     app, repo: Repository, seed: Callable[..., ModuleManifest]
 ) -> None:

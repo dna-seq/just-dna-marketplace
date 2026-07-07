@@ -39,7 +39,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     settings = settings or get_settings()
     configure_logging(settings)
     validate_hf_access(settings)  # exits(1) if hf backend + missing/read-only token; no-op for local
-    app = FastAPI(title="just-dna-marketplace", version="0.4.3")
+    app = FastAPI(title="just-dna-marketplace", version="0.4.4")
 
     conn = connect(settings.db_path)
     init_db(conn)
