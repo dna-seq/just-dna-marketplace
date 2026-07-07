@@ -280,6 +280,49 @@ class Repository:
         self.conn.commit()
         return cur.rowcount > 0
 
+    def list_all_versions(self, namespace: Optional[str] = None) -> list[sqlite3.Row]:
+        """Every published version with its `(namespace, name, version)` — for ops-wide audits."""
+        sql = (
+            "SELECT m.namespace, m.name, v.version, v.manifest_json, v.needs_upgrade "
+            "FROM versions v JOIN modules m ON m.id = v.module_id"
+        )
+        params: tuple[str, ...] = ()
+        if namespace is not None:
+            sql += " WHERE m.namespace = ?"
+            params = (namespace,)
+        sql += " ORDER BY m.namespace, m.name, v.version"
+        return self.conn.execute(sql, params).fetchall()
+
+    def set_needs_upgrade(
+        self, namespace: str, name: str, version: str, needs_upgrade: bool
+    ) -> bool:
+        """Flag/unflag a version as failing the current contract (set by the `revalidate` audit).
+        Non-destructive: the artifact/digest are untouched and the version stays fetchable."""
+        module = self.get_module_row(namespace, name)
+        if module is None:
+            return False
+        cur = self.conn.execute(
+            "UPDATE versions SET needs_upgrade = ? WHERE module_id = ? AND version = ?",
+            (int(needs_upgrade), module["id"], version),
+        )
+        self.conn.commit()
+        return cur.rowcount > 0
+
+    def set_version_manifest(
+        self, namespace: str, name: str, version: str, manifest: ModuleManifest
+    ) -> bool:
+        """Replace a version's stored manifest_json projection. Used by out-of-digest amendments
+        (e.g. logo replacement) that keep `artifact.digest` — the content identity — unchanged."""
+        module = self.get_module_row(namespace, name)
+        if module is None:
+            return False
+        cur = self.conn.execute(
+            "UPDATE versions SET manifest_json = ? WHERE module_id = ? AND version = ?",
+            (manifest.model_dump_json(), module["id"], version),
+        )
+        self.conn.commit()
+        return cur.rowcount > 0
+
     def increment_downloads(self, namespace: str, name: str) -> None:
         self.conn.execute(
             "UPDATE modules SET downloads = downloads + 1 WHERE namespace = ? AND name = ?",

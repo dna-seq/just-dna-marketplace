@@ -207,6 +207,22 @@ def amend_changelog(
     typer.echo(f"✓ {namespace}/{name}@{version} changelog updated:\n{result['changelog']}")
 
 
+@app.command("amend-logo")
+def amend_logo(
+    namespace: str,
+    name: str,
+    version: str,
+    logo: Path = typer.Argument(..., help="Logo image (png/jpg/jpeg)"),
+    url: Optional[str] = UrlOpt,
+    token: Optional[str] = TokenOpt,
+) -> None:
+    """Replace a published version's logo (metadata only; out of the digest, so no version bump)."""
+    with _client(url, token, need_token=True) as c:
+        result = c.amend_logo(namespace, name, version, logo)
+    logo_entry = result.get("logo") or {}
+    typer.echo(f"✓ {namespace}/{name}@{version} logo updated → {logo_entry.get('name')}")
+
+
 @app.command("update-module-version")
 def update_module_version(
     namespace: str,

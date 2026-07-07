@@ -19,6 +19,9 @@ class CardStats(BaseModel):
     gene_count: int = 0
     genes: list[str] = Field(default_factory=list)
     categories: list[str] = Field(default_factory=list)
+    clinvar_count: int = 0
+    pathogenic_count: int = 0
+    benign_count: int = 0
 
 
 class ModuleCard(BaseModel):
@@ -29,7 +32,9 @@ class ModuleCard(BaseModel):
     title: str
     description: str
     icon: str
+    icon_set: str = "fomantic"
     color: str
+    logo_url: Optional[str] = None  # served logo, when the module ships one; else fall back to icon
     latest_version: Optional[str]
     genome_build: str
     license: Optional[str]
@@ -47,6 +52,8 @@ class VersionSummary(BaseModel):
     artifact_digest: str
     compile_success: bool
     yanked: bool
+    signed: bool = False  # carries an Ed25519 signature over artifact.digest (SPEC §5)
+    needs_upgrade: bool = False  # set by the `revalidate` audit: fails the current contract
     created_at: str
     changelog: str
     manifest_url: str

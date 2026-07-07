@@ -173,6 +173,44 @@ def amend_changelog(
     return {"namespace": namespace, "name": name, "version": version, "changelog": changelog}
 
 
+@router.post("/{namespace}/{name}/versions/{version}/logo")
+async def amend_logo(
+    repo: RepoDep,
+    storage: StorageDep,
+    account: AccountDep,
+    namespace: str,
+    name: str,
+    version: str,
+    logo: Annotated[UploadFile, File()],
+) -> dict:
+    """Replace a published version's logo (png/jpg/jpeg). Owner-only. Out-of-digest metadata: the
+    artifact/digest — and any signature over it — stay immutable, so no version bump is needed."""
+    require_namespace_member(account, namespace)
+    data = await logo.read()
+    try:
+        manifest = await run_in_threadpool(
+            publish_service.amend_logo,
+            repo=repo,
+            storage=storage,
+            namespace=namespace,
+            name=name,
+            version=version,
+            filename=logo.filename or "",
+            data=data,
+        )
+    except publish_service.PublishError as exc:
+        code = (
+            status.HTTP_404_NOT_FOUND
+            if exc.detail == "version_not_found"
+            else status.HTTP_422_UNPROCESSABLE_CONTENT
+        )
+        raise HTTPException(code, detail={"error": exc.detail, "errors": exc.errors})
+    return {
+        "namespace": namespace, "name": name, "version": version,
+        "logo": manifest.logo.model_dump() if manifest.logo else None,
+    }
+
+
 @router.post("/{namespace}/{name}/versions/{version}/yank")
 def yank(
     repo: RepoDep,

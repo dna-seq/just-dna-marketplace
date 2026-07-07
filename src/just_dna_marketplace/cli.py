@@ -5,12 +5,16 @@ DB, and issue API keys / namespaces for the static-key auth model.
 
 import secrets
 
+import httpx
 import typer
 import uvicorn
+from just_dna_format.manifest import ModuleManifest
 
 from just_dna_marketplace.config import Settings, get_settings
 from just_dna_marketplace.db.repository import Repository
 from just_dna_marketplace.db.schema import connect, init_db
+from just_dna_marketplace.services.pmid_check import verify_pmids
+from just_dna_marketplace.services.revalidate import gather_pmids, revalidate_version
 from just_dna_marketplace.storage.base import StorageBackend
 from just_dna_marketplace.storage.local import LocalStorage
 
@@ -140,6 +144,61 @@ def blacklist(namespace: str) -> None:
 def unblacklist(namespace: str) -> None:
     """Un-hide a blacklisted namespace."""
     _set_flag(namespace, blacklisted=False)
+
+
+@app.command()
+def revalidate(
+    namespace: str = typer.Option(None, "--namespace", "-n", help="Limit to one namespace"),
+    set_flag: bool = typer.Option(
+        False, "--set-flag/--report-only",
+        help="Set the needs_upgrade flag on failing versions (default: report only)",
+    ),
+    check_pmids: bool = typer.Option(
+        False, "--check-pmids", help="Also verify each study PMID resolves at NCBI (network)"
+    ),
+) -> None:
+    """Re-run the current contract's `validate_spec` over every published version's stored spec.
+
+    Finds modules that a `just-dna-format` bump would now reject. Published artifacts are immutable
+    and untouched; with `--set-flag` failing versions are marked `needs_upgrade` so listings surface
+    them and an upgrade (re-publish as a new PATCH) can be scheduled. See docs/UPGRADE.md."""
+    settings = get_settings()
+    repo = Repository(connect(settings.db_path))
+    storage = _storage(settings)
+    ok = failed = skipped = 0
+    for row in repo.list_all_versions(namespace):
+        ns, name, ver = row["namespace"], row["name"], row["version"]
+        manifest = ModuleManifest.model_validate_json(row["manifest_json"])
+        status, errors = revalidate_version(storage, ns, name, ver, manifest)
+
+        pmid_note = ""
+        if check_pmids:
+            pmids = gather_pmids(storage, ns, name, ver, manifest)
+            try:
+                missing = [p for p, exists in verify_pmids(pmids).items() if not exists]
+            except httpx.HTTPError as exc:
+                pmid_note = f"  [pmid check failed: {exc}]"
+            else:
+                if missing:
+                    status = "needs_upgrade"
+                    errors = [*errors, f"PMIDs not found at NCBI: {', '.join(missing)}"]
+                pmid_note = f"  [{len(pmids)} pmid(s) checked]"
+
+        if status == "ok":
+            ok += 1
+        elif status == "skipped":
+            skipped += 1
+        else:
+            failed += 1
+        marker = {"ok": "✓", "needs_upgrade": "✗", "skipped": "–"}[status]
+        typer.echo(f"{marker} {ns}/{name}@{ver} [{status}]{pmid_note}")
+        for err in errors[:5]:
+            typer.echo(f"    {err}")
+        if set_flag and status in ("ok", "needs_upgrade"):
+            repo.set_needs_upgrade(ns, name, ver, status == "needs_upgrade")
+
+    typer.echo(f"\n{ok} ok, {failed} needs_upgrade, {skipped} skipped"
+               + ("" if set_flag else "  (report only; pass --set-flag to persist)"))
 
 
 @app.command("revoke-key")

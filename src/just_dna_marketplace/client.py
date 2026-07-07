@@ -131,25 +131,53 @@ class MarketplaceClient:
             raise MarketplaceError(resp.status_code, resp.text)
         return resp.content
 
+    def pubkey(self) -> Optional[str]:
+        """The server's Ed25519 public key (base64) for pinning, or None if it doesn't sign."""
+        resp = self._http.get("/pubkey")
+        if resp.status_code == 404:
+            return None
+        return self._json(resp)["public_key"]
+
     def download(
-        self, namespace: str, name: str, version: str, dest: Path, *, include_logs: bool = True
+        self,
+        namespace: str,
+        name: str,
+        version: str,
+        dest: Path,
+        *,
+        include_logs: bool = True,
+        public_key: Optional[str] = None,
     ) -> ModuleManifest:
-        """Download a version's artifact (+ logs) into `dest` and verify it. Returns the manifest."""
+        """Download a version's artifact (+ logs/logo/provenance) into `dest` and verify it.
+
+        When `public_key` (base64 raw, pinned out-of-band) is given, the manifest's Ed25519
+        signature over `artifact.digest` is enforced. Returns the verified manifest."""
         dest = Path(dest)
         dest.mkdir(parents=True, exist_ok=True)
         listing = self._json(
             self._http.get(f"/modules/{namespace}/{name}/versions/{version}/download")
         )
+        manifest = self.manifest(namespace, name, version)
         names = [f["name"] for f in listing["files"]]
         if include_logs:
             names += [e["name"] for e in self.logs(namespace, name, version)]
+        if manifest.logo is not None:
+            names.append(manifest.logo.name)
+        if manifest.provenance is not None and manifest.provenance.file:
+            names.append(manifest.provenance.file)
         for rel in names:
             out = dest / rel
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_bytes(self._fetch_file(namespace, name, version, rel))
-        manifest = self.manifest(namespace, name, version)
         write_manifest(manifest, dest / "manifest.json")
-        verify_manifest(dest, manifest, check_logs=include_logs)
+        verify_manifest(
+            dest,
+            manifest,
+            check_logs=include_logs,
+            check_logo=manifest.logo is not None,
+            check_provenance=manifest.provenance is not None,
+            public_key=public_key,
+        )
         return manifest
 
     # ── Publish ────────────────────────────────────────────────────────────────
@@ -199,6 +227,17 @@ class MarketplaceClient:
         resp = self._http.patch(
             f"/modules/{namespace}/{name}/versions/{version}",
             json={"changelog": changelog, "append": append},
+        )
+        return self._json(resp)
+
+    def amend_logo(
+        self, namespace: str, name: str, version: str, logo_path: Path
+    ) -> dict:
+        """Replace a published version's logo (owner token; out-of-digest, no version bump)."""
+        logo_path = Path(logo_path)
+        resp = self._http.post(
+            f"/modules/{namespace}/{name}/versions/{version}/logo",
+            files={"logo": (logo_path.name, logo_path.read_bytes(), "application/octet-stream")},
         )
         return self._json(resp)
 

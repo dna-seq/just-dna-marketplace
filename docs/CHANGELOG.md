@@ -6,6 +6,29 @@ All notable changes to **just-dna-marketplace**. Format follows
 Full API: [API-REFERENCE.md](API-REFERENCE.md) · client: [CLIENT.md](CLIENT.md) · plan:
 [ROADMAP.md](ROADMAP.md).
 
+## [0.5.0] — 2026-07-07
+
+Accommodates **just-dna-format / just-dna-compiler 0.2.0** (pins bumped to `>=0.2.0`). The DB stores
+each version's whole `manifest.json`, so the new manifest fields round-trip with **no schema
+migration**; this release *surfaces* and *serves* them.
+
+### Added
+- **Structured provenance + gene-panel surfacing.** A published spec's `provenance.json` (per-variant
+  rationale) is compiled, hashed, and served at `.../files/provenance.json`; the manifest carries the
+  lean `provenance` summary. A `panel` (gene-panel) declaration and `display.icon_set` round-trip and
+  appear on the module card.
+- **ClinVar stat surfacing.** `CardStats` gains `clinvar_count` / `pathogenic_count` / `benign_count`.
+- **Module logo.** A published `logo.{png,jpg,jpeg}` is compiled out of `artifact.digest`, served at
+  `.../files/<logo>`, included in the download tarball, and exposed as `logo_url` on the card
+  (consumers fall back to `icon`/`icon_set` when absent).
+- **`POST .../versions/{version}/logo`** — owner-scoped logo replacement, mirroring `amend-changelog`.
+  Metadata-only: the artifact/digest — and any signature over it — stay immutable, so **no version
+  bump**. Client `amend_logo(...)` + `marketplace-client amend-logo`.
+- **Optional Ed25519 signing (SPEC §5).** Set `MARKETPLACE_SIGNING_KEY` to an Ed25519 private-key PEM
+  and the server signs each version's `artifact.digest`; `GET /api/v1/pubkey` serves the public key
+  for clients to pin. `VersionSummary.signed` flags signed versions; `client.download(...,
+  public_key=...)` enforces a pinned key. Unset (default) → unsigned, 0.4 behaviour unchanged.
+
 ## [0.4.5] — 2026-07-07
 
 ### Added

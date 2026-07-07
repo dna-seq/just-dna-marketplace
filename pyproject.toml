@@ -1,6 +1,6 @@
 [project]
 name = "just-dna-marketplace"
-version = "0.4.5"
+version = "0.5.0"
 description = "Reference client (and optional server) for the just-dna annotation module marketplace"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -9,7 +9,7 @@ dependencies = [
     "httpx>=0.28.1",
     "typer>=0.26.8",
     "python-dotenv>=1.0.1",
-    "just-dna-format>=0.1.0",
+    "just-dna-format>=0.2.0",
 ]
 
 [project.optional-dependencies]
@@ -23,7 +23,7 @@ server = [
     "eliot>=1.17.5",
     "huggingface-hub>=0.27.0",
     "pyjwt>=2.10.0",
-    "just-dna-compiler>=0.1.0",
+    "just-dna-compiler>=0.2.0",
 ]
 
 [build-system]

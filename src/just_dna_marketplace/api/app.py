@@ -10,7 +10,8 @@ import logging
 import time
 from typing import Optional
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request, status
+from just_dna_format.signing import public_key_b64_from_pem
 
 from just_dna_marketplace import __version__
 from just_dna_marketplace.api.routers import auth, modules, namespaces, publish
@@ -80,6 +81,17 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     @app.get("/health", tags=["ops"])
     def health() -> dict:
         return {"status": "ok", "version": __version__, "storage": settings.storage_backend}
+
+    @app.get(f"{API_PREFIX}/pubkey", tags=["ops"])
+    def pubkey() -> dict:
+        """The Ed25519 public key clients pin to verify signed manifests (SPEC §5). 404 when the
+        server is not configured to sign."""
+        if settings.signing_key is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="signing_not_configured")
+        return {
+            "algorithm": "ed25519",
+            "public_key": public_key_b64_from_pem(settings.signing_key.read_bytes()),
+        }
 
     return app
 

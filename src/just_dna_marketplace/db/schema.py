@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS versions (
     manifest_json   TEXT NOT NULL,
     compile_success INTEGER NOT NULL DEFAULT 0,
     yanked          INTEGER NOT NULL DEFAULT 0,
+    needs_upgrade   INTEGER NOT NULL DEFAULT 0,
     changelog       TEXT NOT NULL DEFAULT '',
     created_at      TEXT NOT NULL DEFAULT '',
     UNIQUE(module_id, version)
@@ -108,3 +109,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE namespaces ADD COLUMN featured INTEGER NOT NULL DEFAULT 0")
     if "blacklisted" not in ns_cols:
         conn.execute("ALTER TABLE namespaces ADD COLUMN blacklisted INTEGER NOT NULL DEFAULT 0")
+
+    ver_cols = {row["name"] for row in conn.execute("PRAGMA table_info(versions)").fetchall()}
+    if "needs_upgrade" not in ver_cols:
+        # Set by the `revalidate` audit when a version no longer satisfies the current contract.
+        conn.execute("ALTER TABLE versions ADD COLUMN needs_upgrade INTEGER NOT NULL DEFAULT 0")

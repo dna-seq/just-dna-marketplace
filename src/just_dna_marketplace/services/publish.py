@@ -22,11 +22,15 @@ from typing import Mapping, Optional
 from eliot import start_action
 from just_dna_compiler.compiler import compile_module, reverse_module, validate_spec
 from just_dna_format.identity import canonical_id
+from just_dna_format.integrity import sha256_bytes
 from just_dna_format.manifest import (
+    LOGO_EXTENSIONS,
     MARKETPLACE_COMPILED_BY,
+    FileEntry,
     ModuleManifest,
     write_manifest,
 )
+from just_dna_format.signing import sign_digest
 
 from just_dna_marketplace.config import Settings
 from just_dna_marketplace.db.repository import Repository
@@ -178,6 +182,13 @@ def _finalize(
             manifest.identity.canonical_id = canonical_id(namespace, name, version)
             manifest.owner = owner
             manifest.published_at = now_iso()
+            if settings.signing_key is not None:
+                # Sign the content identity (SPEC §5); clients pin the pubkey served at /pubkey.
+                manifest.signature = sign_digest(
+                    manifest.artifact.digest,
+                    settings.signing_key.read_bytes(),
+                    signed_at=manifest.published_at,
+                )
             write_manifest(manifest, out_dir / "manifest.json")
 
             # Carry spec inputs (yaml/csv/md/logo) into the module dir; skip parquets (the
@@ -206,6 +217,45 @@ def _finalize(
                 logs=[e.name for e in manifest.logs],
             )
             return manifest
+
+
+def amend_logo(
+    *,
+    repo: Repository,
+    storage: StorageBackend,
+    namespace: str,
+    name: str,
+    version: str,
+    filename: str,
+    data: bytes,
+) -> ModuleManifest:
+    """Replace a published version's logo without a version bump.
+
+    The logo is out of `artifact.digest` (SPEC §5 / manifest contract), so swapping it leaves the
+    content identity — and any signature over it — intact. Mirrors `amend_changelog`: metadata only,
+    owner-gated at the router. Updates the stored `manifest.logo` entry, re-stores the logo bytes
+    and the refreshed `manifest.json`, and refreshes the DB projection.
+    """
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if ext not in LOGO_EXTENSIONS:
+        raise PublishError(
+            "invalid_logo", errors=[f"logo must be one of {sorted(LOGO_EXTENSIONS)}, got {filename!r}"]
+        )
+    raw = repo.get_manifest_json(namespace, name, version)
+    if raw is None:
+        raise PublishError("version_not_found")
+    manifest = ModuleManifest.model_validate_json(raw)
+
+    logo_name = f"logo.{ext}"
+    manifest.logo = FileEntry(name=logo_name, sha256=sha256_bytes(data), size=len(data))
+
+    key = version_key(namespace, name, version)
+    storage.store_module(
+        key,
+        {logo_name: data, "manifest.json": manifest.model_dump_json(indent=2).encode("utf-8") + b"\n"},
+    )
+    repo.set_version_manifest(namespace, name, version, manifest)
+    return manifest
 
 
 # ── Archive helpers ─────────────────────────────────────────────────────────────

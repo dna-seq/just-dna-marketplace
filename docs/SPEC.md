@@ -217,13 +217,19 @@ All hashes are SHA-256, lowercase hex, prefixed `sha256:`.
   (`module_spec.yaml`, `variants.csv`, `studies.csv`), no normalization → byte-reproducible
   by any downloader holding the same file.
 - **Per-file artifact hashes** (`artifact.files[].sha256`): SHA-256 over the concrete written
-  bytes of each parquet and the logo. Parquet is **not** deterministic across polars/arrow
+  bytes of each parquet. Parquet is **not** deterministic across polars/arrow
   versions, so the manifest hashes the *bytes actually written* and pins `compiler_version`
   + `ensembl_reference` so a re-compile can be reproduced when needed.
 - **Artifact digest** (`artifact.digest`): SHA-256 over a canonical listing of the files —
   build the JSON array `[{"name","sha256","size"}, ...]` sorted by `name`, serialized with
   sorted keys and no whitespace, then hash. This is a Merkle-style root: verifying it
   verifies the whole set cheaply, and it is the version's content identity.
+- **Out-of-digest hashed assets** (`logs`, `provenance`, `logo`): hashed as their own manifest
+  entries but **excluded from `artifact.digest`**, so identical compiled data stays dedup-equal
+  regardless of them and a logo/log/provenance change is a PATCH (metadata-only) rather than a new
+  content identity. The `POST .../versions/{v}/logo` amendment relies on this — it swaps the logo
+  without a version bump. Verified opportunistically (`verify_manifest(check_logs/check_provenance/
+  check_logo=True)`): a present file must match its hash, an absent one is not a failure.
 - **`compile_success`**: `true` only when the server's own `compile_module()` returned
   success. A downloader treats `false`, or a foreign `compiled_by`, as untrusted.
 
@@ -238,8 +244,11 @@ All hashes are SHA-256, lowercase hex, prefixed `sha256:`.
    reproducibility.
 6. Only then write the directory into `CUSTOM_MODULES_DIR` and `refresh_module_registry()`.
 
-**Future:** the server can sign `artifact.digest` with an Ed25519 key and publish the pubkey,
-so clients can defend against a compromised storage backend. Not required for MVP.
+**Signing (shipped in 0.5.0 / format 0.2.0, optional):** with `MARKETPLACE_SIGNING_KEY` set to an
+Ed25519 private-key PEM, the server signs each version's `artifact.digest` and adds a `signature`
+block to the manifest; `GET /api/v1/pubkey` publishes the public key. A client that pins that key
+(`verify_manifest(public_key=...)`) can defend against a compromised storage backend. Unset →
+unsigned, and verification behaves exactly as before.
 
 ---
 

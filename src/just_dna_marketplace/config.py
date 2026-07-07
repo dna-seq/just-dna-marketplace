@@ -62,6 +62,12 @@ class Settings(BaseSettings):
     rate_download_per_hour: float = 1000
     rate_search_per_min: float = 60
 
+    # Optional Ed25519 artifact signing (SPEC §5). When `signing_key` points at an Ed25519 private
+    # key PEM, the server signs each published version's `artifact.digest` and the public key is
+    # served at `GET /api/v1/pubkey` for clients to pin. Unset (default) → signing off, unsigned
+    # manifests (0.4 behaviour unchanged).
+    signing_key: Path | None = None
+
     # Optional JWT sessions (backwards-compatible). Static API keys always work; if `jwt_secret`
     # is set, POST /auth/tokens exchanges a key for a short-lived JWT that's also accepted as a
     # bearer. Unset (default) → JWT disabled, static-keys-only (0.4 behaviour unchanged).

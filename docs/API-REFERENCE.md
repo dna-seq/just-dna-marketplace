@@ -79,6 +79,8 @@ Publish/import `422.error` codes: `missing_spec_files`, `invalid_spec` (carries
 | 17 | POST | `/api/v1/modules/lookup` | — | Batch digest lookup |
 | 18 | POST | `/api/v1/auth/tokens` | api key | Exchange an API key for a JWT (optional) |
 | 19 | PATCH | `/api/v1/modules/{ns}/{name}/versions/{v}` | bearer | Amend the version changelog (metadata) |
+| 20 | POST | `/api/v1/modules/{ns}/{name}/versions/{v}/logo` | bearer | Replace the version logo (metadata, out of digest) |
+| 21 | GET | `/api/v1/pubkey` | — | Ed25519 public key for verifying signed manifests |
 
 ---
 
@@ -200,6 +202,21 @@ Amend a published version's **changelog** — descriptive metadata only; the art
 `{"changelog": "…", "append": false}` (`append=true` adds to the existing changelog).
 `200 → {"namespace","name","version","changelog"}`. Errors: `401`, `403 not_namespace_member`,
 `404 version_not_found`.
+
+### 20. `POST /api/v1/modules/{ns}/{name}/versions/{v}/logo`  *(bearer)*
+Replace a version's **logo** — multipart `logo` file (`png`/`jpg`/`jpeg`). Descriptive metadata only:
+the logo is out of `artifact.digest`, so the content identity (and any signature over it) stays
+immutable and there is **no version bump**. Owner-only. `200 → {"namespace","name","version","logo":
+{"name","sha256","size"}}`. Errors: `401`, `403 not_namespace_member`, `404 version_not_found`,
+`422 invalid_logo` (bad extension). Cards expose the served logo as `logo_url`; consumers fall back
+to `icon`/`icon_set` when a module ships none.
+
+### 21. `GET /api/v1/pubkey`
+The server's Ed25519 **public key** for verifying signed manifests (SPEC §5). `200 → {"algorithm":
+"ed25519", "public_key": "<base64>"}` when the server is configured to sign (`MARKETPLACE_SIGNING_KEY`
+set); `404 signing_not_configured` otherwise. Pin this key and pass it to the client's verify step to
+defend against a compromised storage backend. Signed versions are flagged `signed: true` in the
+versions list; the `revalidate` audit flags contract-drifted versions `needs_upgrade: true`.
 
 ### 13. `GET /api/v1/auth/whoami`  *(bearer)*
 `200 → {"account": "just-dna-seq", "namespaces": ["just-dna-seq"]}`. `401` on missing/invalid token.

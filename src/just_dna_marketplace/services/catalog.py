@@ -25,6 +25,12 @@ def _manifest_url(namespace: str, name: str, version: str) -> str:
     return f"{API_PREFIX}/modules/{namespace}/{name}/versions/{version}/manifest"
 
 
+def _logo_url(namespace: str, name: str, version: str, manifest: Optional[ModuleManifest]) -> Optional[str]:
+    if manifest is None or manifest.logo is None:
+        return None
+    return f"{API_PREFIX}/modules/{namespace}/{name}/versions/{version}/files/{manifest.logo.name}"
+
+
 def _latest_manifest(repo: Repository, row: sqlite3.Row) -> Optional[ModuleManifest]:
     if not row["latest_version"]:
         return None
@@ -48,14 +54,21 @@ def _card(repo: Repository, row: sqlite3.Row) -> ModuleCard:
         gene_count=stats.gene_count if stats else 0,
         genes=stats.genes[:_CARD_GENES] if stats else [],
         categories=stats.categories if stats else [],
+        clinvar_count=stats.clinvar_count if stats else 0,
+        pathogenic_count=stats.pathogenic_count if stats else 0,
+        benign_count=stats.benign_count if stats else 0,
     )
     return ModuleCard(
         namespace=row["namespace"],
         name=row["name"],
         title=row["title"],
         description=row["description"],
-        icon=row["icon"],
+        icon=manifest.display.icon if manifest else row["icon"],
+        icon_set=manifest.display.icon_set if manifest else "fomantic",
         color=row["color"],
+        logo_url=_logo_url(row["namespace"], row["name"], row["latest_version"], manifest)
+        if row["latest_version"]
+        else None,
         latest_version=row["latest_version"],
         genome_build=row["genome_build"],
         license=row["license"],
@@ -73,10 +86,20 @@ def _version_summary(row: sqlite3.Row, namespace: str, name: str) -> VersionSumm
         artifact_digest=row["digest"],
         compile_success=bool(row["compile_success"]),
         yanked=bool(row["yanked"]),
+        signed=_version_signed(row),
+        needs_upgrade=bool(row["needs_upgrade"]) if "needs_upgrade" in row.keys() else False,
         created_at=row["created_at"],
         changelog=row["changelog"],
         manifest_url=_manifest_url(namespace, name, row["version"]),
     )
+
+
+def _version_signed(row: sqlite3.Row) -> bool:
+    """Whether a version's stored manifest carries a signature (projected from manifest_json)."""
+    if "manifest_json" not in row.keys() or not row["manifest_json"]:
+        return False
+    manifest = ModuleManifest.model_validate_json(row["manifest_json"])
+    return manifest.signature is not None
 
 
 def list_modules(

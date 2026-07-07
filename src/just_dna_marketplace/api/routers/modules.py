@@ -157,6 +157,10 @@ def get_file(
         | {e.name for e in manifest.logs}
         | {e.name for e in manifest.inputs}
     )
+    if manifest.logo is not None:
+        allowed.add(manifest.logo.name)
+    if manifest.provenance is not None and manifest.provenance.file:
+        allowed.add(manifest.provenance.file)
     if file_path not in allowed:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="file_not_found")
 
@@ -183,7 +187,10 @@ def _build_tarball(storage: StorageBackend, key: str, manifest: ModuleManifest) 
             tar.addfile(info, io.BytesIO(data))
 
         _add("manifest.json", manifest.model_dump_json(indent=2).encode("utf-8") + b"\n")
-        for entry in [*manifest.artifact.files, *manifest.logs, *manifest.inputs]:
+        entries = [*manifest.artifact.files, *manifest.logs, *manifest.inputs]
+        if manifest.logo is not None:
+            entries.append(manifest.logo)
+        for entry in entries:
             if storage.exists(key, entry.name):
                 _add(entry.name, storage.read_file(key, entry.name))
     return buf.getvalue()
