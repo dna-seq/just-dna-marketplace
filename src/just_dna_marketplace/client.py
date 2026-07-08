@@ -3,6 +3,7 @@ HTTP client for the marketplace API — powers the `marketplace-client` CLI and 
 tests. Depends only on `httpx` + the `just-dna-format` contract (for verify-then-install).
 """
 
+import logging
 from pathlib import Path
 from typing import Any, Optional
 
@@ -10,7 +11,11 @@ import httpx
 from just_dna_format.integrity import verify_manifest
 from just_dna_format.manifest import ModuleManifest, write_manifest
 
+from just_dna_marketplace.version import VersionInfo, compatibility_error
+
 API_PREFIX: str = "/api/v1"
+
+_log = logging.getLogger("marketplace.client")
 
 # Spec inputs a publisher uploads; compiled outputs are produced server-side, never uploaded.
 _SKIP_UPLOAD_SUFFIXES: frozenset[str] = frozenset({".parquet"})
@@ -43,6 +48,18 @@ class MarketplaceError(RuntimeError):
         self.detail = detail
 
 
+class VersionMismatchError(MarketplaceError):
+    """The server and this client disagree on the API / `just-dna-format` contract, so exchanging
+    compiled artifacts would collide. Raised before publish/download rather than letting a cryptic
+    digest or shape error surface downstream."""
+
+    def __init__(self, message: str, *, server: VersionInfo, client: VersionInfo) -> None:
+        # 409 Conflict mirrors the API's "your request conflicts with server state" family.
+        super().__init__(409, message)
+        self.server = server
+        self.client = client
+
+
 class MarketplaceClient:
     """Thin sync client over the marketplace REST API."""
 
@@ -52,9 +69,18 @@ class MarketplaceClient:
         token: Optional[str] = None,
         timeout: float = 600.0,  # publishes recompile server-side; large modules take minutes
         transport: Optional[httpx.BaseTransport] = None,
+        check_version: bool = True,
     ) -> None:
         self.base_url = base_url.rstrip("/")
-        headers = {"Authorization": f"Bearer {token}"} if token else {}
+        self.local_version = VersionInfo.local()
+        headers = {
+            # Advertise the client's versions so the server can log/guard the exchange too.
+            "X-Marketplace-Client-Version": self.local_version.marketplace,
+            "X-Format-Version": self.local_version.format or "",
+            "X-API-Version": self.local_version.api,
+        }
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
         # `transport` lets tests drive the ASGI app in-process (httpx.ASGITransport).
         self._http = httpx.Client(
             base_url=self.base_url + API_PREFIX,
@@ -62,6 +88,8 @@ class MarketplaceClient:
             timeout=timeout,
             transport=transport,
         )
+        self._check_version = check_version
+        self._compat_checked = False  # guard runs once per client, lazily
 
     def close(self) -> None:
         self._http.close()
@@ -71,6 +99,34 @@ class MarketplaceClient:
 
     def __exit__(self, *exc: object) -> None:
         self.close()
+
+    # ── Version guard ───────────────────────────────────────────────────────────
+
+    def server_version(self) -> Optional[VersionInfo]:
+        """The server's advertised versions, or None if it's too old to report them (pre-0.7.1:
+        `GET /version` 404s). Never raises for a plain missing endpoint."""
+        resp = self._http.get("/version")
+        if resp.status_code == 404:
+            return None
+        return VersionInfo.model_validate(self._json(resp))
+
+    def assert_compatible(self) -> None:
+        """Fail fast if the server and this client are contract-incompatible. Runs once per client;
+        a no-op when `check_version=False`. A server too old to report its version can't be checked,
+        so it only warns."""
+        if not self._check_version or self._compat_checked:
+            return
+        server = self.server_version()
+        if server is None:
+            _log.warning(
+                "server does not report its version (pre-0.7.1); skipping the compatibility guard"
+            )
+            self._compat_checked = True
+            return
+        message = compatibility_error(server, self.local_version)
+        if message is not None:
+            raise VersionMismatchError(message, server=server, client=self.local_version)
+        self._compat_checked = True  # only cache a clean pass, so a mismatch re-raises on retry
 
     def _json(self, resp: httpx.Response) -> Any:
         if resp.status_code >= 400:
@@ -152,6 +208,7 @@ class MarketplaceClient:
 
         When `public_key` (base64 raw, pinned out-of-band) is given, the manifest's Ed25519
         signature over `artifact.digest` is enforced. Returns the verified manifest."""
+        self.assert_compatible()  # a format mismatch shows up as a digest failure — catch it first
         dest = Path(dest)
         dest.mkdir(parents=True, exist_ok=True)
         listing = self._json(
@@ -186,6 +243,7 @@ class MarketplaceClient:
         self, namespace: str, name: str, version: str, spec_dir: Path, changelog: str = ""
     ) -> ModuleManifest:
         """Upload a spec directory and publish it as a new version (server-side recompile)."""
+        self.assert_compatible()
         files = [
             ("files", (rel, data, "application/octet-stream"))
             for rel, data in gather_spec_files(spec_dir)
@@ -208,6 +266,7 @@ class MarketplaceClient:
         display: Optional[dict] = None,
     ) -> ModuleManifest:
         """Publish from a zip/tar.gz archive (spec archive or legacy parquet-only + `display`)."""
+        self.assert_compatible()
         archive_path = Path(archive_path)
         data = {"version": version, "changelog": changelog}
         for key in ("title", "description", "report_title", "icon", "color"):

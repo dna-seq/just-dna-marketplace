@@ -58,8 +58,11 @@ stale wrapper.
 - **Pydantic 2**: Mandatory for data classes — request/response models, config, and the manifest
   contract. FastAPI response models should be explicit Pydantic types, not bare dicts.
 - **Typer CLI**: Mandatory for all CLI tools.
-- **Eliot**: Used for structured logging and action tracking. Prefer Eliot actions over ad-hoc
-  logging for anything multi-step (publish, compile, backfill).
+- **Logging**: Use the standard-library `logging` system logger. **Eliot is being retired** (see
+  `docs/ROADMAP.md` → "Next marketplace version"): the remaining `eliot` usage (`start_action` in
+  `services/publish.py`, the Eliot→stdlib bridge in `logging_setup.py`) is rewired to stdlib
+  `logging` next version, and the `eliot` dependency dropped. Do **not** add new Eliot usage; wrap
+  multi-step work (publish, compile, backfill) with `logging` at INFO with structured `extra=`.
 - **Pay attention to terminal warnings**: Always check output for warnings, especially deprecation
   ones. AI knowledge of APIs can be outdated; these warnings are critical hints to update code.
 - **No placeholders**: Never use `/my/custom/path/` or fabricated example values in code.

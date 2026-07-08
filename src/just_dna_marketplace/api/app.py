@@ -16,6 +16,7 @@ from just_dna_format.signing import public_key_b64_from_pem
 from just_dna_marketplace import __version__
 from just_dna_marketplace.api.routers import auth, modules, namespaces, publish
 from just_dna_marketplace.config import API_PREFIX, Settings, get_settings
+from just_dna_marketplace.version import VersionInfo
 from just_dna_marketplace.db.repository import Repository
 from just_dna_marketplace.db.schema import connect, init_db
 from just_dna_marketplace.logging_setup import configure_logging
@@ -50,10 +51,12 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     app.state.repo = Repository(conn)
     app.state.storage = _build_storage(settings)
     app.state.rate_limiter = default_limiter(settings)
+    server_versions = VersionInfo.local()
 
     @app.middleware("http")
     async def _trace_requests(request: Request, call_next):
-        """Trace each request (DEBUG) and always log unhandled errors with a traceback."""
+        """Trace each request (DEBUG), always log unhandled errors, and stamp the server's versions
+        on every response so a client can guard against a contract mismatch without a round-trip."""
         start = time.perf_counter()
         try:
             response = await call_next(request)
@@ -62,6 +65,9 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
                 "unhandled error: %s %s", request.method, request.url.path
             )
             raise
+        response.headers["X-Marketplace-Version"] = server_versions.marketplace
+        response.headers["X-Format-Version"] = server_versions.format or ""
+        response.headers["X-API-Version"] = server_versions.api
         duration_ms = (time.perf_counter() - start) * 1000
         _request_log.debug(
             "%s %s%s -> %s (%.1fms)",
@@ -81,6 +87,12 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     @app.get("/health", tags=["ops"])
     def health() -> dict:
         return {"status": "ok", "version": __version__, "storage": settings.storage_backend}
+
+    @app.get(f"{API_PREFIX}/version", tags=["ops"], response_model=VersionInfo)
+    def version() -> VersionInfo:
+        """The server's API + contract versions, for the client's compatibility guard. A client that
+        gets a 404 here is talking to a pre-0.7.1 server (too old to report), and warns accordingly."""
+        return server_versions
 
     @app.get(f"{API_PREFIX}/pubkey", tags=["ops"])
     def pubkey() -> dict:

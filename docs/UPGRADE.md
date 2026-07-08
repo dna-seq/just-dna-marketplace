@@ -25,19 +25,28 @@ truth** — knowing which published modules would fail *today's* contract.
    only rejects references with no PMID token at all (e.g. a bare dbSNP URL, which grounds zero
    studies anyway). Audited against the Gen-I corpus → nothing published was invalidated.
 2. **Audit with `marketplace revalidate`.** It re-runs the *current* `validate_spec` over every
-   published version's stored spec inputs and reports `ok` / `needs_upgrade` / `skipped` (spec inputs
-   not retrievable). Published artifacts are never touched.
-   - `--set-flag` persists a non-destructive `needs_upgrade` flag on failing versions (surfaced in
-     the versions API as `needs_upgrade: true`). The version stays fetchable and keeps verifying.
+   published version's stored spec inputs and reports `ok` / `upgradable` / `needs_upgrade` /
+   `skipped` (spec inputs not retrievable). Published artifacts are never touched.
+   - `needs_upgrade` — the spec no longer **validates** (a tightened rule, e.g. the 0.2 PMID pattern).
+   - `upgradable` — the spec still validates, but one or more variant rows can be **losslessly
+     back-populated** to an *additive* contract (the 0.3 `direction`/`stat_significance`/`clin_sig`
+     axes, derived from the legacy `state`/booleans). Optional-but-recommended.
+   - `--set-flag` persists a non-destructive `needs_upgrade` flag on both (surfaced in the versions
+     API as `needs_upgrade: true`). The version stays fetchable and keeps verifying.
    - `--check-pmids` additionally verifies each study PMID resolves at NCBI E-utilities (the online
      "curl validator"). This is a **marketplace ops** call — the contract libs stay strictly offline;
      `just-dna-format` only does the cheap regex (`extract_pmids`).
 3. **Upgrade a flagged version** by re-publishing, never mutating old bytes:
-   - Apply a migration transform to the spec inputs (for PMID: `extract_pmids` → digit-only; drop or
-     fix references that don't resolve online).
-   - `marketplace-client publish … <new PATCH version>` — a normal publish under the new contract.
-   - The predecessor stays fetchable (existing installs keep working); yank it once the successor is
-     live if you want it out of `latest`/listings.
+   - **Additive-column upgrades (0.3) are automated: `marketplace upgrade`.** It applies the format's
+     own `VariantRow.upgraded()` derivation to the stored `variants.csv` (back-populate
+     `direction`/`stat_significance`/`clin_sig`, trim `state` to its derived legacy mirror), then
+     re-publishes as the next PATCH through the normal server-side compile path. Dry-run by default;
+     `--apply` publishes. Idempotent — re-running finds nothing left to do. Scope with `-n`/`-m`.
+   - **Validator-failure upgrades** stay a manual transform + publish: apply the fix to the spec
+     inputs (for PMID: `extract_pmids` → digit-only; drop or fix references that don't resolve
+     online), then `marketplace-client publish … <new PATCH version>` under the new contract.
+   - Either way the predecessor stays fetchable (existing installs keep working); yank it once the
+     successor is live if you want it out of `latest`/listings.
 4. **Out-of-digest assets never trigger this.** `logs`, `provenance`, and `logo` are hashed but
    excluded from `artifact.digest`; a logo change is a PATCH via `amend-logo`, not a re-publish.
 

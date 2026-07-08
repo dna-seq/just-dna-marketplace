@@ -16,6 +16,7 @@ from just_dna_compiler.compiler import validate_spec
 from just_dna_format.manifest import ModuleManifest
 from just_dna_format.spec import extract_pmids
 
+from just_dna_marketplace.services.upgrade import plan_variants_upgrade
 from just_dna_marketplace.storage.base import StorageBackend, version_key
 
 # The spec inputs `validate_spec` needs; other inputs (MODULE.md, logo) are irrelevant to it.
@@ -27,8 +28,15 @@ def revalidate_version(
 ) -> tuple[str, list[str]]:
     """Re-run the current `validate_spec` against a version's stored spec inputs.
 
-    Returns `(status, errors)` where status is `"ok"`, `"needs_upgrade"`, or `"skipped"` (the spec
-    inputs aren't retrievable — e.g. a legacy import that shipped no inputs; not counted as a fail).
+    Returns `(status, messages)` where status is:
+      * `"needs_upgrade"` — the spec no longer *validates* under the current contract (a tightened
+        rule, e.g. the 0.2 PMID pattern). Re-publish is required.
+      * `"upgradable"` — the spec still validates, but one or more variant rows can be losslessly
+        back-populated to the additive 0.3 columns (direction/stat_significance/clin_sig) from the
+        legacy `state`/booleans. Re-publish is optional-but-recommended; run `marketplace upgrade`.
+      * `"ok"` — validates and already carries the current columns.
+      * `"skipped"` — spec inputs aren't retrievable (e.g. a legacy import that shipped no inputs;
+        not counted as a failure).
     """
     key = version_key(namespace, name, version)
     # Base on what's actually retrievable from storage (not just what the manifest lists), so a
@@ -44,7 +52,16 @@ def revalidate_version(
         for iname in present:
             (spec / iname).write_bytes(storage.read_file(key, iname))
         result = validate_spec(spec)
-    return ("ok" if result.valid else "needs_upgrade"), result.errors
+        if not result.valid:
+            return "needs_upgrade", result.errors
+        # Still valid — but do the additive 0.3 axes have a legacy source to back-populate?
+        plan = plan_variants_upgrade((spec / "variants.csv").read_text(encoding="utf-8"))
+    if plan.needed:
+        return "upgradable", [
+            f"{plan.upgradable_rows}/{plan.total_rows} variant row(s) can be back-populated to the "
+            f"0.3 columns (direction/stat_significance/clin_sig) — run `marketplace upgrade`"
+        ]
+    return "ok", []
 
 
 def gather_pmids(

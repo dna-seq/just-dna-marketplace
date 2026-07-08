@@ -269,6 +269,54 @@ limiting (publish/download/search buckets, §7) — a simple in-memory token buc
 
 ---
 
+## 0.7 — format 0.3 adoption + upgrade automation (shipped)
+
+- **Adopted `just-dna-format` / `just-dna-compiler` 0.3.** Pins bumped to `>=0.3.0`. The new columns
+  (`direction`, `stat_significance`, `effect_size`/`effect_measure`, `flags`, `effect_allele`,
+  `trait_efo_id`, `clin_sig`) flow through publish/recompile automatically — they are additive and
+  the server recompiles every spec, so a published module simply gains them on its next publish.
+- **`revalidate` now surfaces 0.3 drift as `upgradable`.** Because the 0.3 columns are additive, a
+  legacy module still *validates*; the audit distinguishes `ok` / **`upgradable`** (validates, but
+  the additive axes can be back-populated from the legacy `state`/booleans) / `needs_upgrade` (fails
+  the current validator) / `skipped`. `--set-flag` marks both `upgradable` and `needs_upgrade`.
+- **New `marketplace upgrade` command + `services/upgrade.py`.** Consumes the format's own
+  `VariantRow.upgraded()` derivation to migrate a version's `variants.csv` (back-populate
+  `direction`/`stat_significance`/`clin_sig` + trim `state`) and re-publish as the next PATCH through
+  the normal server-side compile path. Dry-run by default; `--apply` publishes. The predecessor is
+  never mutated (immutability) and the transform is idempotent. This is the automation of
+  `docs/UPGRADE.md` step 3 for the 0.3 additive-column contract.
+- The diplotype/copy-number *shapes* (format items 7/7b) stay representation-only until a consumer
+  (just-dna-lite) can call them; nothing marketplace-side is needed for them yet.
+
+### 0.7.1 — server/client version-mismatch guard
+
+Bumping the format contract to 0.3 surfaced a real collision: a client on one `just-dna-format`
+contract talking to a server on another produces a cryptic digest / catalog-shape error. 0.7.1 adds
+an explicit guard:
+
+- The server advertises its versions — `GET /api/v1/version` (`{api, marketplace, format, compiler}`)
+  plus `X-Marketplace-Version` / `X-Format-Version` / `X-API-Version` response headers on **every**
+  response — and the client sends its own versions as request headers.
+- Before publish/import/download, the client calls `assert_compatible()`: it fetches the server's
+  versions and raises `VersionMismatchError` (HTTP 409) with an actionable message when the API
+  version or the `just-dna-format` contract can't interoperate. Contract rule: same MAJOR, and while
+  `0.x` also the same MINOR (a 0.x minor moves the parquet schema / `artifact.digest` — exactly the
+  0.2→0.3 case). A differing marketplace *app* version is **not** fatal (the API is path-versioned).
+- A pre-0.7.1 server (no `/version`) can't be checked, so the guard warns and proceeds.
+  `MARKETPLACE_SKIP_VERSION_CHECK=1` (or `MarketplaceClient(check_version=False)`) is the escape
+  hatch; `marketplace-client version` prints both sides and the verdict. Logic in `version.py`.
+
+## Next marketplace version (post-0.7)
+
+- **Retire Eliot → stdlib `logging`.** Rewire the Eliot usage — `start_action` in
+  `services/publish.py` and the Eliot→stdlib bridge in `logging_setup.py` — onto the standard-library
+  `logging` system logger, and drop the `eliot` dependency from `pyproject.toml`. The
+  `just-dna-format` packages already use only stdlib `logging`; this aligns the marketplace with them
+  and with the CLAUDE.md logging standard. (Was bundled with the format-0.3 adoption; that shipped in
+  0.7 without touching logging, so this is now a standalone task.)
+
+---
+
 ## Verification
 
 - **M0:** `pytest -vvv` on `just-dna-format` — digest order-independence/stability,

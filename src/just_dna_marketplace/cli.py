@@ -15,6 +15,7 @@ from just_dna_marketplace.db.repository import Repository
 from just_dna_marketplace.db.schema import connect, init_db
 from just_dna_marketplace.services.pmid_check import verify_pmids
 from just_dna_marketplace.services.revalidate import gather_pmids, revalidate_version
+from just_dna_marketplace.services.upgrade import plan_version_upgrade, upgrade_version
 from just_dna_marketplace.storage.base import StorageBackend
 from just_dna_marketplace.storage.local import LocalStorage
 
@@ -228,11 +229,11 @@ def revalidate(
     init_db(conn)  # idempotent: ensures the needs_upgrade column exists on a pre-0.5.0 DB
     repo = Repository(conn)
     storage = _storage(settings)
-    ok = failed = skipped = 0
+    counts = {"ok": 0, "upgradable": 0, "needs_upgrade": 0, "skipped": 0}
     for row in repo.list_all_versions(namespace):
         ns, name, ver = row["namespace"], row["name"], row["version"]
         manifest = ModuleManifest.model_validate_json(row["manifest_json"])
-        status, errors = revalidate_version(storage, ns, name, ver, manifest)
+        status, messages = revalidate_version(storage, ns, name, ver, manifest)
 
         pmid_note = ""
         if check_pmids:
@@ -244,24 +245,71 @@ def revalidate(
             else:
                 if missing:
                     status = "needs_upgrade"
-                    errors = [*errors, f"PMIDs not found at NCBI: {', '.join(missing)}"]
+                    messages = [*messages, f"PMIDs not found at NCBI: {', '.join(missing)}"]
                 pmid_note = f"  [{len(pmids)} pmid(s) checked]"
 
-        if status == "ok":
-            ok += 1
-        elif status == "skipped":
-            skipped += 1
-        else:
-            failed += 1
-        marker = {"ok": "✓", "needs_upgrade": "✗", "skipped": "–"}[status]
+        counts[status] += 1
+        marker = {"ok": "✓", "upgradable": "⇧", "needs_upgrade": "✗", "skipped": "–"}[status]
         typer.echo(f"{marker} {ns}/{name}@{ver} [{status}]{pmid_note}")
-        for err in errors[:5]:
-            typer.echo(f"    {err}")
-        if set_flag and status in ("ok", "needs_upgrade"):
-            repo.set_needs_upgrade(ns, name, ver, status == "needs_upgrade")
+        for msg in messages[:5]:
+            typer.echo(f"    {msg}")
+        # Both a validation failure and a 0.3 back-population are "re-publish me" states.
+        if set_flag and status in ("ok", "upgradable", "needs_upgrade"):
+            repo.set_needs_upgrade(ns, name, ver, status in ("upgradable", "needs_upgrade"))
 
-    typer.echo(f"\n{ok} ok, {failed} needs_upgrade, {skipped} skipped"
-               + ("" if set_flag else "  (report only; pass --set-flag to persist)"))
+    typer.echo(
+        f"\n{counts['ok']} ok, {counts['upgradable']} upgradable, "
+        f"{counts['needs_upgrade']} needs_upgrade, {counts['skipped']} skipped"
+        + ("" if set_flag else "  (report only; pass --set-flag to persist)")
+    )
+
+
+@app.command()
+def upgrade(
+    namespace: str = typer.Option(None, "--namespace", "-n", help="Limit to one namespace"),
+    module: str = typer.Option(None, "--module", "-m", help="Limit to one module name"),
+    apply: bool = typer.Option(
+        False, "--apply/--dry-run",
+        help="Actually re-publish upgraded versions (default: dry-run, report only)",
+    ),
+) -> None:
+    """Back-populate the additive 0.3 axes (direction/stat_significance/clin_sig) and re-publish.
+
+    For every published version whose `variants.csv` still carries only the legacy `state`/ClinVar
+    booleans, applies the format's `VariantRow.upgraded()` derivation and — with `--apply` —
+    re-publishes the result as the next PATCH through the normal server-side compile path. The
+    predecessor is never mutated and stays fetchable. Dry-run by default. See docs/UPGRADE.md."""
+    settings = get_settings()
+    conn = connect(settings.db_path)
+    init_db(conn)
+    repo = Repository(conn)
+    storage = _storage(settings)
+    planned = upgraded = 0
+    for row in repo.list_all_versions(namespace):
+        ns, name, ver = row["namespace"], row["name"], row["version"]
+        if module is not None and name != module:
+            continue
+        manifest = ModuleManifest.model_validate_json(row["manifest_json"])
+        if not apply:
+            plan = plan_version_upgrade(storage, ns, name, ver, manifest)
+            if plan is not None and plan.needed:
+                planned += 1
+                typer.echo(f"⇧ {ns}/{name}@{ver}: {plan.upgradable_rows}/{plan.total_rows} row(s) "
+                           f"would upgrade → next PATCH")
+            continue
+        result = upgrade_version(
+            repo=repo, storage=storage, settings=settings,
+            namespace=ns, name=name, version=ver, manifest=manifest,
+        )
+        if result is not None:
+            new_version, _ = result
+            upgraded += 1
+            typer.echo(f"✓ {ns}/{name}@{ver} → {new_version} (0.3 upgrade published)")
+
+    if apply:
+        typer.echo(f"\n{upgraded} version(s) upgraded and re-published")
+    else:
+        typer.echo(f"\n{planned} version(s) would upgrade  (dry-run; pass --apply to publish)")
 
 
 @app.command("revoke-key")

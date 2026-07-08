@@ -17,6 +17,7 @@ from just_dna_format.manifest import read_manifest, write_manifest
 
 from just_dna_marketplace.client import MarketplaceClient, MarketplaceError
 from just_dna_marketplace.installid import generate_install_id
+from just_dna_marketplace.version import compatibility_error
 
 load_dotenv()  # pick up MARKETPLACE_URL / MARKETPLACE_TOKEN from a local .env
 
@@ -24,6 +25,7 @@ app = typer.Typer(help="Marketplace test client", no_args_is_help=True)
 
 _URL_ENV = "MARKETPLACE_URL"
 _TOKEN_ENV = "MARKETPLACE_TOKEN"
+_SKIP_VERSION_ENV = "MARKETPLACE_SKIP_VERSION_CHECK"
 
 
 def _client(url: Optional[str], token: Optional[str], *, need_token: bool = False) -> MarketplaceClient:
@@ -32,11 +34,36 @@ def _client(url: Optional[str], token: Optional[str], *, need_token: bool = Fals
     if need_token and not tok:
         raise typer.BadParameter(f"a token is required (pass --token or set ${_TOKEN_ENV})")
     timeout = float(os.getenv("MARKETPLACE_TIMEOUT", "600"))  # big modules recompile for minutes
-    return MarketplaceClient(base, tok, timeout=timeout)
+    # Escape hatch: set MARKETPLACE_SKIP_VERSION_CHECK=1 to bypass the contract guard knowingly.
+    check_version = os.getenv(_SKIP_VERSION_ENV, "").strip().lower() not in ("1", "true", "yes")
+    return MarketplaceClient(base, tok, timeout=timeout, check_version=check_version)
 
 
 UrlOpt = typer.Option(None, "--url", help=f"Marketplace base URL (or ${_URL_ENV})")
 TokenOpt = typer.Option(None, "--token", help=f"API key for publish (or ${_TOKEN_ENV})")
+
+
+@app.command("version")
+def show_versions(url: Optional[str] = UrlOpt) -> None:
+    """Show this client's and the server's versions, and whether they're contract-compatible."""
+    with _client(url, None) as c:
+        local = c.local_version
+        server = c.server_version()
+    typer.echo(
+        f"client:  marketplace {local.marketplace}  format {local.format}  api {local.api}"
+    )
+    if server is None:
+        typer.secho("server:  (pre-0.7.1 — does not report its version)", fg=typer.colors.YELLOW)
+        raise typer.Exit(0)
+    typer.echo(
+        f"server:  marketplace {server.marketplace}  format {server.format}  "
+        f"compiler {server.compiler}  api {server.api}"
+    )
+    message = compatibility_error(server, local)
+    if message is not None:
+        typer.secho(f"INCOMPATIBLE — {message}", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    typer.secho("compatible ✓", fg=typer.colors.GREEN)
 
 
 @app.command("list")

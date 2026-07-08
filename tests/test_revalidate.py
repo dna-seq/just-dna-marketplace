@@ -17,9 +17,11 @@ module:
   report_title: R
 genome_build: GRCh38
 """
+# A 0.3-complete spec (carries direction/stat_significance) so revalidation is a clean "ok" — the
+# legacy state-only case is exercised in test_upgrade.py's "upgradable" path.
 _VARIANTS = (
-    "rsid,chrom,start,ref,alts,genotype,weight,state,conclusion,gene,category\n"
-    "rs4244285,10,94781859,G,A,A/G,-0.8,risk,het,CYP2C19,cyp2c19\n"
+    "rsid,chrom,start,ref,alts,genotype,weight,state,conclusion,gene,category,direction,stat_significance\n"
+    "rs4244285,10,94781859,G,A,A/G,-0.8,risk,het,CYP2C19,cyp2c19,risk,significant\n"
 )
 _STUDIES = "rsid,pmid,population,p_value,conclusion,study_design\nrs4244285,[PMID: 29165669],T,0.05,E,U\n"
 _BASE = "/api/v1/modules/just-dna-seq/coronary/versions/1.0.0"
