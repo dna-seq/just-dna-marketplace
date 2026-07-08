@@ -12,16 +12,25 @@ from just_dna_format.manifest import ModuleManifest
 from pydantic import BaseModel
 
 from just_dna_marketplace.api.deps import (
+    Account,
     Pagination,
     get_repo,
     get_storage,
+    optional_account,
     pagination,
     rate_limit,
+    require_account,
     settings_dep,
 )
 from just_dna_marketplace.config import Settings
 from just_dna_marketplace.db.repository import Repository
-from just_dna_marketplace.models.api import ModuleCard, ModuleDetail, Page, VersionSummary
+from just_dna_marketplace.models.api import (
+    ModuleCard,
+    ModuleDetail,
+    Page,
+    StarStatus,
+    VersionSummary,
+)
 from just_dna_marketplace.services import catalog
 from just_dna_marketplace.storage.base import StorageBackend, version_key
 
@@ -31,6 +40,8 @@ RepoDep = Annotated[Repository, Depends(get_repo)]
 StorageDep = Annotated[StorageBackend, Depends(get_storage)]
 SettingsDep = Annotated[Settings, Depends(settings_dep)]
 PageDep = Annotated[Pagination, Depends(pagination)]
+CallerDep = Annotated[Optional[Account], Depends(optional_account)]
+AccountDep = Annotated[Account, Depends(require_account)]
 
 
 def _digest_matches(repo: Repository, digest: str) -> list[dict]:
@@ -49,6 +60,7 @@ class DigestLookup(BaseModel):
 def list_modules(
     repo: RepoDep,
     page: PageDep,
+    caller: CallerDep,
     q: Optional[str] = None,
     category: Optional[str] = None,
     gene: Optional[str] = None,
@@ -58,12 +70,13 @@ def list_modules(
     namespace: Optional[str] = None,
     featured: Optional[bool] = None,
     include_blacklisted: bool = False,
-    sort: str = Query("name", pattern="^(downloads|recent|name)$"),
+    sort: str = Query("name", pattern="^(downloads|recent|name|stars|popular)$"),
 ) -> Page[ModuleCard]:
     return catalog.list_modules(
         repo,
         page=page.page,
         per_page=page.per_page,
+        starred_by=caller.id if caller else None,
         q=q,
         category=category,
         gene=gene,
@@ -96,10 +109,11 @@ def lookup_batch(repo: RepoDep, settings: SettingsDep, body: DigestLookup) -> di
 
 
 @router.get("/{namespace}/{name}", response_model=ModuleDetail)
-def get_module(repo: RepoDep, namespace: str, name: str) -> ModuleDetail:
-    detail = catalog.module_detail(repo, namespace, name)
+def get_module(repo: RepoDep, caller: CallerDep, namespace: str, name: str) -> ModuleDetail:
+    detail = catalog.module_detail(repo, namespace, name, starred_by=caller.id if caller else None)
     if detail is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="module_not_found")
+    repo.increment_views(namespace, name)  # popularity: a real detail view is a view (anon counts)
     return detail
 
 
@@ -164,6 +178,12 @@ def get_file(
     if file_path not in allowed:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="file_not_found")
 
+    # Count the real byte transfer of an artifact file (the parquet), whether served inline or via
+    # a presigned/CDN redirect. Log/provenance/logo fetches are not downloads.
+    if file_path in {f.name for f in manifest.artifact.files}:
+        repo.increment_downloads(namespace, name)
+        repo.increment_version_downloads(namespace, name, version)
+
     key = version_key(namespace, name, version)
     external = storage.file_url(key, file_path)
     if external is not None:
@@ -216,6 +236,7 @@ def download(
     if manifest is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="version_not_found")
     repo.increment_downloads(namespace, name)
+    repo.increment_version_downloads(namespace, name, version)
     key = version_key(namespace, name, version)
 
     if format == "tarball":
@@ -237,3 +258,41 @@ def download(
         for f in manifest.artifact.files
     ]
     return JSONResponse({"digest": manifest.artifact.digest, "files": files})
+
+
+def _star_status(repo: Repository, namespace: str, name: str, account_id: int) -> StarStatus:
+    row = repo.get_module_row(namespace, name)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="module_not_found")
+    return StarStatus(
+        namespace=namespace, name=name, stars=int(row["stars"]),
+        starred_by_me=repo.is_starred(int(row["id"]), account_id),
+    )
+
+
+@router.put(
+    "/{namespace}/{name}/star",
+    response_model=StarStatus,
+    dependencies=[Depends(rate_limit("social"))],
+)
+def star_module(repo: RepoDep, account: AccountDep, namespace: str, name: str) -> StarStatus:
+    """Star a module (GitHub-style favourite). Idempotent — starring twice keeps one star."""
+    row = repo.get_module_row(namespace, name)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="module_not_found")
+    repo.star_module(int(row["id"]), account.id)
+    return _star_status(repo, namespace, name, account.id)
+
+
+@router.delete(
+    "/{namespace}/{name}/star",
+    response_model=StarStatus,
+    dependencies=[Depends(rate_limit("social"))],
+)
+def unstar_module(repo: RepoDep, account: AccountDep, namespace: str, name: str) -> StarStatus:
+    """Remove the caller's star from a module. Idempotent."""
+    row = repo.get_module_row(namespace, name)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="module_not_found")
+    repo.unstar_module(int(row["id"]), account.id)
+    return _star_status(repo, namespace, name, account.id)

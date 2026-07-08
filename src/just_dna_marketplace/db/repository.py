@@ -13,6 +13,8 @@ _SORT_SQL: dict[str, str] = {
     "downloads": "m.downloads DESC, m.name ASC",
     "recent": "m.updated_at DESC, m.name ASC",
     "name": "m.name ASC",
+    "stars": "m.stars DESC, m.name ASC",
+    "popular": "(m.views + m.search_hits) DESC, m.name ASC",
 }
 
 
@@ -75,8 +77,14 @@ class Repository:
         self.conn.commit()
 
     def add_namespace(self, name: str, account_id: int) -> None:
+        """Claim a namespace for an account (the founding owner) and seed its owner membership."""
         self.conn.execute(
             "INSERT OR REPLACE INTO namespaces(name, account_id) VALUES (?, ?)",
+            (name, account_id),
+        )
+        self.conn.execute(
+            "INSERT OR IGNORE INTO namespace_members(namespace, account_id, role) "
+            "VALUES (?, ?, 'owner')",
             (name, account_id),
         )
         self.conn.commit()
@@ -89,17 +97,62 @@ class Repository:
         ).fetchone()
 
     def namespaces_for_account(self, account_id: int) -> list[str]:
+        """Every namespace the account belongs to (owner OR contributor) — feeds `Account.namespaces`
+        and thus the publish membership check."""
         rows = self.conn.execute(
-            "SELECT name FROM namespaces WHERE account_id = ? ORDER BY name", (account_id,)
+            "SELECT namespace FROM namespace_members WHERE account_id = ? ORDER BY namespace",
+            (account_id,),
         ).fetchall()
-        return [r["name"] for r in rows]
+        return [r["namespace"] for r in rows]
 
     def account_owns_namespace(self, account_id: int, namespace: str) -> bool:
+        """Whether the account is an owner of the namespace (membership-aware)."""
+        return self.namespace_role(namespace, account_id) == "owner"
+
+    # ── Namespace membership (0.6.0) ─────────────────────────────────────────
+
+    def namespace_role(self, namespace: str, account_id: int) -> Optional[str]:
+        """The account's role in the namespace (`owner`/`contributor`), or None if not a member."""
         row = self.conn.execute(
-            "SELECT 1 FROM namespaces WHERE account_id = ? AND name = ?",
-            (account_id, namespace),
+            "SELECT role FROM namespace_members WHERE namespace = ? AND account_id = ?",
+            (namespace, account_id),
         ).fetchone()
-        return row is not None
+        return row["role"] if row else None
+
+    def add_member(self, namespace: str, account_id: int, role: str) -> None:
+        """Add or promote an account in a namespace (upsert the role)."""
+        self.conn.execute(
+            "INSERT INTO namespace_members(namespace, account_id, role) VALUES (?, ?, ?) "
+            "ON CONFLICT(namespace, account_id) DO UPDATE SET role = excluded.role",
+            (namespace, account_id, role),
+        )
+        self.conn.commit()
+
+    def remove_member(self, namespace: str, account_id: int) -> bool:
+        """Revoke an account's membership in a namespace. Returns True if a row was removed."""
+        cur = self.conn.execute(
+            "DELETE FROM namespace_members WHERE namespace = ? AND account_id = ?",
+            (namespace, account_id),
+        )
+        self.conn.commit()
+        return cur.rowcount > 0
+
+    def list_members(self, namespace: str) -> list[sqlite3.Row]:
+        """All members of a namespace as `(account, role)`, owners first then by name."""
+        return self.conn.execute(
+            "SELECT a.name AS account, m.role AS role FROM namespace_members m "
+            "JOIN accounts a ON a.id = m.account_id WHERE m.namespace = ? "
+            "ORDER BY (m.role = 'owner') DESC, a.name",
+            (namespace,),
+        ).fetchall()
+
+    def count_namespace_owners(self, namespace: str) -> int:
+        """How many owners a namespace has (guards against removing the last one)."""
+        row = self.conn.execute(
+            "SELECT count(*) AS n FROM namespace_members WHERE namespace = ? AND role = 'owner'",
+            (namespace,),
+        ).fetchone()
+        return int(row["n"])
 
     # ── Lookups ─────────────────────────────────────────────────────────────
 
@@ -154,8 +207,9 @@ class Repository:
         return True
 
     def delete_namespace_grant(self, namespace: str) -> None:
-        """Free a namespace's ownership so a new key can claim it."""
+        """Free a namespace's ownership + all memberships so a new key can claim it."""
         self.conn.execute("DELETE FROM namespaces WHERE name = ?", (namespace,))
+        self.conn.execute("DELETE FROM namespace_members WHERE namespace = ?", (namespace,))
         self.conn.commit()
 
     def find_versions_by_digest(self, digest: str) -> list[sqlite3.Row]:
@@ -185,14 +239,16 @@ class Repository:
         disp = manifest.display
         existing = self.get_module_row(ident.namespace, ident.name)
         if existing is None:
+            # First publish: created_at and updated_at both take the stamp. Republishes advance
+            # only updated_at (below), so created_at preserves the module's first-seen time.
             cur = self.conn.execute(
                 "INSERT INTO modules(namespace, name, title, description, icon, color, "
-                "genome_build, license, owner, updated_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                "genome_build, license, owner, created_at, updated_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     ident.namespace, ident.name, disp.title, disp.description, disp.icon,
                     disp.color, manifest.genome_build, manifest.license, manifest.owner,
-                    updated_at,
+                    updated_at, updated_at,
                 ),
             )
             self.conn.commit()
@@ -329,6 +385,67 @@ class Repository:
             (namespace, name),
         )
         self.conn.commit()
+
+    def increment_version_downloads(self, namespace: str, name: str, version: str) -> None:
+        self.conn.execute(
+            "UPDATE versions SET downloads = downloads + 1 WHERE version = ? AND module_id = "
+            "(SELECT id FROM modules WHERE namespace = ? AND name = ?)",
+            (version, namespace, name),
+        )
+        self.conn.commit()
+
+    def increment_views(self, namespace: str, name: str) -> None:
+        self.conn.execute(
+            "UPDATE modules SET views = views + 1 WHERE namespace = ? AND name = ?",
+            (namespace, name),
+        )
+        self.conn.commit()
+
+    def increment_search_hits(self, module_ids: list[int]) -> None:
+        """Bump `search_hits` for every module that appeared in a search result page (one write)."""
+        if not module_ids:
+            return
+        placeholders = ",".join("?" * len(module_ids))
+        self.conn.execute(
+            f"UPDATE modules SET search_hits = search_hits + 1 WHERE id IN ({placeholders})",
+            module_ids,
+        )
+        self.conn.commit()
+
+    # ── Stars (GitHub-style favourites; `module_stars` is truth, `modules.stars` a cache) ─────
+
+    def star_module(self, module_id: int, account_id: int) -> bool:
+        """Star a module for an account (idempotent). Returns True if this added a new star."""
+        cur = self.conn.execute(
+            "INSERT OR IGNORE INTO module_stars(module_id, account_id) VALUES (?, ?)",
+            (module_id, account_id),
+        )
+        if cur.rowcount:
+            self.conn.execute(
+                "UPDATE modules SET stars = stars + 1 WHERE id = ?", (module_id,)
+            )
+        self.conn.commit()
+        return cur.rowcount > 0
+
+    def unstar_module(self, module_id: int, account_id: int) -> bool:
+        """Remove an account's star (idempotent). Returns True if a star was removed."""
+        cur = self.conn.execute(
+            "DELETE FROM module_stars WHERE module_id = ? AND account_id = ?",
+            (module_id, account_id),
+        )
+        if cur.rowcount:
+            self.conn.execute(
+                "UPDATE modules SET stars = stars - 1 WHERE id = ?", (module_id,)
+            )
+        self.conn.commit()
+        return cur.rowcount > 0
+
+    def is_starred(self, module_id: int, account_id: int) -> bool:
+        row = self.conn.execute(
+            "SELECT 1 FROM module_stars WHERE module_id = ? AND account_id = ?",
+            (module_id, account_id),
+        ).fetchone()
+        return row is not None
 
     # ── Search / list ─────────────────────────────────────────────────────────
 

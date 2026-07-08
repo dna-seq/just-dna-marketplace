@@ -38,3 +38,42 @@ def test_init_db_adds_needs_upgrade_to_old_db(tmp_path: Path) -> None:
     # Idempotent: running again is a no-op, and the audit query now resolves the column.
     init_db(conn)
     assert conn.execute("SELECT needs_upgrade FROM versions").fetchall() == []
+
+
+def test_init_db_adds_0_6_counters(tmp_path: Path) -> None:
+    db = tmp_path / "old.db"
+    conn = connect(db)
+    conn.executescript(_OLD_SCHEMA)
+    conn.commit()
+
+    init_db(conn)  # migrates in place
+    assert {"stars", "views", "search_hits", "created_at"} <= _cols(conn, "modules")
+    assert "downloads" in _cols(conn, "versions")
+
+
+# A pre-0.6 DB with a single-owner namespace but no membership table.
+_PRE_MEMBERSHIP = """
+CREATE TABLE accounts (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE);
+CREATE TABLE namespaces (name TEXT PRIMARY KEY, account_id INTEGER NOT NULL);
+INSERT INTO accounts(id, name) VALUES (1, 'antonkulaga');
+INSERT INTO namespaces(name, account_id) VALUES ('just-dna-seq', 1);
+"""
+
+
+def test_init_db_backfills_owner_membership(tmp_path: Path) -> None:
+    db = tmp_path / "old.db"
+    conn = connect(db)
+    conn.executescript(_PRE_MEMBERSHIP)
+    conn.commit()
+
+    init_db(conn)  # creates namespace_members + backfills the founding owner
+    rows = conn.execute(
+        "SELECT namespace, account_id, role FROM namespace_members"
+    ).fetchall()
+    assert [(r["namespace"], r["account_id"], r["role"]) for r in rows] == [
+        ("just-dna-seq", 1, "owner")
+    ]
+
+    # Idempotent: re-running never duplicates the seeded membership.
+    init_db(conn)
+    assert len(conn.execute("SELECT * FROM namespace_members").fetchall()) == 1

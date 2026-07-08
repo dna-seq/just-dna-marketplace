@@ -1,6 +1,6 @@
 [project]
 name = "just-dna-marketplace"
-version = "0.5.0"
+version = "0.6.0"
 description = "Reference client (and optional server) for the just-dna annotation module marketplace"
 readme = "README.md"
 requires-python = ">=3.13"

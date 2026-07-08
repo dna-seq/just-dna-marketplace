@@ -43,9 +43,11 @@ use an object.
 | Status | `detail` | When |
 |---|---|---|
 | `401` | `missing_bearer_token` / `invalid_token` | no/invalid `Authorization` on an authed route |
-| `403` | `not_namespace_member` | token doesn't own the path namespace |
-| `404` | `module_not_found` / `version_not_found` / `file_not_found` | unknown module/version/file |
+| `403` | `not_namespace_member` | token isn't a member of the path namespace |
+| `403` | `not_namespace_owner` | member action requires the `owner` role (member management) |
+| `404` | `module_not_found` / `version_not_found` / `file_not_found` / `account_not_found` / `not_a_member` | unknown module/version/file/account/member |
 | `409` | `version_exists` | re-publishing an existing `(ns, name, version)` (immutable) |
+| `409` | `last_owner` | removing a namespace's only owner |
 | `422` | `invalid_version` | version isn't SemVer `MAJOR.MINOR.PATCH` |
 | `422` | `{ "error": "<code>", "errors": [...], "warnings": [...] }` | spec/import failure (see below) |
 | `429` | `rate_limited` | token bucket exhausted (search/download/publish); `Retry-After` header |
@@ -81,6 +83,11 @@ Publish/import `422.error` codes: `missing_spec_files`, `invalid_spec` (carries
 | 19 | PATCH | `/api/v1/modules/{ns}/{name}/versions/{v}` | bearer | Amend the version changelog (metadata) |
 | 20 | POST | `/api/v1/modules/{ns}/{name}/versions/{v}/logo` | bearer | Replace the version logo (metadata, out of digest) |
 | 21 | GET | `/api/v1/pubkey` | — | Ed25519 public key for verifying signed manifests |
+| 22 | PUT | `/api/v1/modules/{ns}/{name}/star` | bearer | Star a module (favourite) |
+| 23 | DELETE | `/api/v1/modules/{ns}/{name}/star` | bearer | Remove the caller's star |
+| 24 | GET | `/api/v1/namespaces/{ns}/members` | bearer | List namespace members + roles |
+| 25 | POST | `/api/v1/namespaces/{ns}/members` | bearer (owner) | Add / promote a member |
+| 26 | DELETE | `/api/v1/namespaces/{ns}/members/{account}` | bearer (owner) | Revoke a member's access |
 
 ---
 
@@ -93,14 +100,16 @@ List/search the catalog (one **card** per module, its latest non-yanked version)
 Query params: `q` (title/description substring), `category`, `gene`, `genome_build`, `owner`,
 `license` (exact facet matches), `namespace` (restrict to one namespace), `featured` (`true` →
 only featured), `include_blacklisted` (`true` → include hidden namespaces), `sort` = `name`
-(default) | `downloads` | `recent`, plus `page`, `per_page`. Facet filters match modules with a
-non-yanked version carrying that gene/category.
+(default) | `downloads` | `recent` | `stars` | `popular`, plus `page`, `per_page`. Facet filters
+match modules with a non-yanked version carrying that gene/category.
 
 `200 → Page<ModuleCard>`. **Featured** modules float to the top of every sort (card has
 `featured: bool`). **Blacklisted** namespaces are omitted by default — returned only with
 `include_blacklisted=true` or an explicit `namespace=` (moderation, not deletion). Card
 `stats.genes` is **truncated** (top 3); the full list is in the detail and manifest. Rate-limited
-(`search` bucket).
+(`search` bucket). Each listed module also takes one `search_hit` (feeds `sort=popular`). When
+called **with** a bearer token, `starred_by_me` reflects the caller; anonymous reads leave it
+`false`.
 
 ```json
 {
@@ -110,11 +119,15 @@ non-yanked version carrying that gene/category.
     "latest_version": "2.0.0", "genome_build": "GRCh38", "license": null, "owner": "just-dna-seq",
     "stats": {"variant_count": 16, "study_count": 5, "gene_count": 8,
               "genes": ["APOE","LPA","PCSK9"], "categories": ["cardio"]},
-    "downloads": 214, "updated_at": "2026-07-06T20:38:01Z"
+    "downloads": 214, "stars": 12, "views": 340, "starred_by_me": false,
+    "created_at": "2026-05-01T09:00:00Z", "updated_at": "2026-07-06T20:38:01Z"
   }],
   "total": 1, "page": 1, "per_page": 20
 }
 ```
+
+Sort keys: `downloads` (module download total), `recent` (`updated_at`), `stars` (stargazer count),
+`popular` (blended `views + search_hits`).
 
 ### 3. `GET /api/v1/modules/lookup?digest=sha256:…`
 Find published versions whose `artifact.digest` matches (content-identity / "already published?"
@@ -129,14 +142,16 @@ check). `digest` is required. `200 →`
 ### 4. `GET /api/v1/modules/{ns}/{name}`
 `200 → ModuleDetail` = the card **plus** `readme` (MODULE.md text), the **full** `stats.genes`, the
 embedded `versions` array (`VersionSummary[]`, includes yanked), and `latest_manifest` (the full
-`ModuleManifest` inline). `404 module_not_found`.
+`ModuleManifest` inline). `404 module_not_found`. Each successful detail view increments the
+module's `views` counter (feeds `sort=popular`); with a bearer token the card's `starred_by_me`
+reflects the caller.
 
 ### 5. `GET /api/v1/modules/{ns}/{name}/versions`
 `200 → Page<VersionSummary>` (paginated). `404 module_not_found`.
 
 ```json
 {"version":"2.0.0","artifact_digest":"sha256:…","compile_success":true,"yanked":false,
- "created_at":"…","changelog":"…","manifest_url":"/api/v1/modules/…/versions/2.0.0/manifest"}
+ "downloads":214,"created_at":"…","changelog":"…","manifest_url":"/api/v1/modules/…/versions/2.0.0/manifest"}
 ```
 
 ### 6. `GET /api/v1/modules/{ns}/{name}/versions/{v}/manifest`
@@ -152,10 +167,12 @@ allowed, e.g. `logs/reviewer.log`), or a spec input (`variants.csv`). `{path}` i
 - `200` `application/octet-stream` (local storage streams the bytes), **or** `302` redirect to a
   CDN/presigned URL (external storage backends).
 - `404 version_not_found` / `404 file_not_found` (path not in the manifest listing).
-- Does **not** increment the download counter (that's endpoint 9).
+- Fetching an **artifact file** (a `manifest.artifact.files` entry, e.g. `weights.parquet`)
+  increments the module + version `downloads` counters — so presigned/CDN redirects of the real
+  bytes are counted. Fetching a log/provenance/logo file does **not** count.
 
 ### 9. `GET /api/v1/modules/{ns}/{name}/versions/{v}/download`
-Increments the module's `downloads` counter. `?format=`:
+Increments the module's `downloads` counter **and** the version's `downloads` counter. `?format=`:
 - `files` (default) → `200 {"digest":"sha256:…","files":[{"name","url","sha256","size"}]}` — the
   artifact files for verify-then-install; `url` points at endpoint 8 (or an external URL).
 - `tarball` → `200` `application/gzip` (`Content-Disposition: attachment; filename="{name}-{v}.tar.gz"`),
@@ -218,8 +235,36 @@ set); `404 signing_not_configured` otherwise. Pin this key and pass it to the cl
 defend against a compromised storage backend. Signed versions are flagged `signed: true` in the
 versions list; the `revalidate` audit flags contract-drifted versions `needs_upgrade: true`.
 
+### 22–23. `PUT` / `DELETE /api/v1/modules/{ns}/{name}/star`  *(bearer)*
+Star (favourite) a module GitHub-style, or remove the caller's star. Both are **idempotent** (a
+double `PUT` keeps exactly one star; a `DELETE` on an unstarred module is a no-op). `200 →
+{"namespace","name","stars","starred_by_me"}` where `stars` is the total stargazer count.
+Errors: `401`, `404 module_not_found`. Rate-limited (`social` bucket). Sort the catalog by count
+with `GET /api/v1/modules?sort=stars`.
+
+### 24. `GET /api/v1/namespaces/{ns}/members`  *(bearer)*
+List a namespace's members. Any **member** (owner or contributor) may read. `200 → {"namespace":
+"…", "members": [{"account": "alice", "role": "owner"}, {"account": "bob", "role": "contributor"}]}`.
+Errors: `401`, `403 not_namespace_member`.
+
+### 25. `POST /api/v1/namespaces/{ns}/members`  *(bearer — owner)*
+Add or promote an account in a namespace. **Owner-only.** Body `{"account": "bob", "role":
+"contributor"}` (`role` = `owner` | `contributor`, default `contributor`; re-posting an existing
+member updates the role). Both roles can publish/amend/yank; only owners manage membership.
+`201 → {"namespace","members":[…]}` (the updated roster). Errors: `401`, `403 not_namespace_owner`,
+`404 account_not_found`, `422 invalid_role`.
+
+### 26. `DELETE /api/v1/namespaces/{ns}/members/{account}`  *(bearer — owner)*
+Revoke an account's access to a namespace — removes the membership row. **Owner-only.** This is
+**namespace-scoped**, not a global API-key revocation: the account keeps its key and any other
+namespaces. `200 → {"namespace","members":[…]}`. Errors: `401`, `403 not_namespace_owner`,
+`404 account_not_found` / `404 not_a_member`, `409 last_owner` (cannot remove a namespace's only
+owner). Global key/account revocation stays an ops-CLI action (`marketplace revoke-key` /
+`revoke-account`).
+
 ### 13. `GET /api/v1/auth/whoami`  *(bearer)*
-`200 → {"account": "just-dna-seq", "namespaces": ["just-dna-seq"]}`. `401` on missing/invalid token.
+`200 → {"account": "just-dna-seq", "namespaces": ["just-dna-seq"]}` — `namespaces` is every
+namespace the caller is a member of (owner or contributor). `401` on missing/invalid token.
 
 ### 18. `POST /api/v1/auth/tokens`
 Optional JWT session. Body `{"api_key": "mk_live_…"}`. `200 → {"token": "<jwt>", "token_type":
@@ -258,21 +303,31 @@ digests are already in each module's `manifest.json`, so no client-side hashing.
 ## Schemas
 
 ### ModuleCard
-`namespace, name, title, description, icon, color, latest_version, genome_build, license, owner,
-stats: CardStats, downloads, updated_at`.
+`namespace, name, title, description, icon, icon_set, color, logo_url, latest_version, genome_build,
+license, owner, stats: CardStats, downloads, stars, views, created_at, updated_at, starred_by_me,
+featured`. `stars`/`views` are counters; `starred_by_me` is true only when the request carried a
+bearer for an account that starred the module; `created_at` is the first-publish time,
+`updated_at` advances on every republish.
 
 ### CardStats
 `variant_count, study_count, gene_count, genes: string[], categories: string[]`. In cards `genes`
 is truncated to 3; in detail/manifest it's the full list.
 
 ### VersionSummary
-`version, artifact_digest, compile_success, yanked, created_at, changelog, manifest_url`.
+`version, artifact_digest, compile_success, yanked, signed, needs_upgrade, downloads, created_at,
+changelog, manifest_url`. `downloads` is the per-version download count.
 
 ### ModuleDetail
 `ModuleCard` fields + `readme: string`, `versions: VersionSummary[]`, `latest_manifest: ModuleManifest`.
 
 ### WhoAmI
-`account: string, namespaces: string[]`.
+`account: string, namespaces: string[]` (every namespace the account is a member of).
+
+### MemberList
+`namespace: string, members: [{account: string, role: "owner"|"contributor"}]`.
+
+### StarStatus
+`namespace: string, name: string, stars: int, starred_by_me: bool`.
 
 ### ModuleManifest  {#modulemanifest}
 The source-of-truth contract (from `just-dna-format`; the DB is a projection of it):

@@ -41,6 +41,10 @@ CREATE TABLE IF NOT EXISTS modules (
     readme         TEXT NOT NULL DEFAULT '',
     latest_version TEXT,
     downloads      INTEGER NOT NULL DEFAULT 0,
+    stars          INTEGER NOT NULL DEFAULT 0,
+    views          INTEGER NOT NULL DEFAULT 0,
+    search_hits    INTEGER NOT NULL DEFAULT 0,
+    created_at     TEXT NOT NULL DEFAULT '',
     updated_at     TEXT NOT NULL DEFAULT '',
     UNIQUE(namespace, name)
 );
@@ -54,6 +58,7 @@ CREATE TABLE IF NOT EXISTS versions (
     compile_success INTEGER NOT NULL DEFAULT 0,
     yanked          INTEGER NOT NULL DEFAULT 0,
     needs_upgrade   INTEGER NOT NULL DEFAULT 0,
+    downloads       INTEGER NOT NULL DEFAULT 0,
     changelog       TEXT NOT NULL DEFAULT '',
     created_at      TEXT NOT NULL DEFAULT '',
     UNIQUE(module_id, version)
@@ -69,9 +74,23 @@ CREATE TABLE IF NOT EXISTS version_categories (
     category   TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS module_stars (
+    module_id  INTEGER NOT NULL REFERENCES modules(id) ON DELETE CASCADE,
+    account_id INTEGER NOT NULL REFERENCES accounts(id),
+    PRIMARY KEY (module_id, account_id)
+);
+
+CREATE TABLE IF NOT EXISTS namespace_members (
+    namespace  TEXT NOT NULL,
+    account_id INTEGER NOT NULL REFERENCES accounts(id),
+    role       TEXT NOT NULL DEFAULT 'contributor',
+    PRIMARY KEY (namespace, account_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_versions_module ON versions(module_id);
 CREATE INDEX IF NOT EXISTS idx_version_genes ON version_genes(gene);
 CREATE INDEX IF NOT EXISTS idx_version_categories ON version_categories(category);
+CREATE INDEX IF NOT EXISTS idx_namespace_members_account ON namespace_members(account_id);
 """
 
 
@@ -110,7 +129,28 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if "blacklisted" not in ns_cols:
         conn.execute("ALTER TABLE namespaces ADD COLUMN blacklisted INTEGER NOT NULL DEFAULT 0")
 
+    mod_cols = {row["name"] for row in conn.execute("PRAGMA table_info(modules)").fetchall()}
+    # 0.6.0 community/discovery counters (all mirror the existing `downloads` column pattern).
+    if "stars" not in mod_cols:
+        conn.execute("ALTER TABLE modules ADD COLUMN stars INTEGER NOT NULL DEFAULT 0")
+    if "views" not in mod_cols:
+        conn.execute("ALTER TABLE modules ADD COLUMN views INTEGER NOT NULL DEFAULT 0")
+    if "search_hits" not in mod_cols:
+        conn.execute("ALTER TABLE modules ADD COLUMN search_hits INTEGER NOT NULL DEFAULT 0")
+    if "created_at" not in mod_cols:
+        # First-publish stamp, distinct from `updated_at` (which advances on every republish).
+        conn.execute("ALTER TABLE modules ADD COLUMN created_at TEXT NOT NULL DEFAULT ''")
+
     ver_cols = {row["name"] for row in conn.execute("PRAGMA table_info(versions)").fetchall()}
     if "needs_upgrade" not in ver_cols:
         # Set by the `revalidate` audit when a version no longer satisfies the current contract.
         conn.execute("ALTER TABLE versions ADD COLUMN needs_upgrade INTEGER NOT NULL DEFAULT 0")
+    if "downloads" not in ver_cols:  # 0.6.0 per-version download counter
+        conn.execute("ALTER TABLE versions ADD COLUMN downloads INTEGER NOT NULL DEFAULT 0")
+
+    # 0.6.0 namespace membership: seed each existing single-owner namespace as an `owner` member,
+    # so the new membership check (which supersedes single-owner) sees no disruption. Idempotent.
+    conn.execute(
+        "INSERT OR IGNORE INTO namespace_members(namespace, account_id, role) "
+        "SELECT name, account_id, 'owner' FROM namespaces"
+    )

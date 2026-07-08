@@ -61,6 +61,7 @@ class Settings(BaseSettings):
     rate_publish_per_hour: float = 10
     rate_download_per_hour: float = 1000
     rate_search_per_min: float = 60
+    rate_social_per_min: float = 30  # star/unstar toggles (0.6.0)
 
     # Optional Ed25519 artifact signing (SPEC §5). When `signing_key` points at an Ed25519 private
     # key PEM, the server signs each published version's `artifact.digest` and the public key is

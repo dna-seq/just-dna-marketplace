@@ -33,12 +33,13 @@ class RateLimiter:
 
 
 def default_limiter(settings) -> RateLimiter:
-    """Build a limiter from settings: publish 10/h, download 1000/h, search 60/min (defaults)."""
+    """Build a limiter from settings: publish 10/h, download 1000/h, search 60/min, social 30/min."""
     return RateLimiter(
         limits={
             "publish": (settings.rate_publish_per_hour, settings.rate_publish_per_hour / 3600.0),
             "download": (settings.rate_download_per_hour, settings.rate_download_per_hour / 3600.0),
             "search": (settings.rate_search_per_min, settings.rate_search_per_min / 60.0),
+            "social": (settings.rate_social_per_min, settings.rate_social_per_min / 60.0),
         },
         enabled=settings.rate_limit_enabled,
     )

@@ -6,6 +6,37 @@ All notable changes to **just-dna-marketplace**. Format follows
 Full API: [API-REFERENCE.md](API-REFERENCE.md) · client: [CLIENT.md](CLIENT.md) · plan:
 [ROADMAP.md](ROADMAP.md).
 
+## [0.6.0] — 2026-07-08
+
+Community & discovery features. No `just-dna-format`/`just-dna-compiler` change (pins stay `>=0.2.0`).
+All schema changes are additive `ALTER`s / new tables applied idempotently by `init_db`, so an
+existing live catalog upgrades in place — a pre-0.6 single-owner namespace is backfilled as an
+`owner` membership automatically.
+
+### Added
+- **GitHub-style stars.** `PUT`/`DELETE /api/v1/modules/{ns}/{name}/star` (auth) toggle a favourite;
+  the stargazer count and the caller's `starred_by_me` appear on the card, and `?sort=stars` ranks
+  by count. Idempotent (starring twice keeps one star). A `module_stars` table is the source of
+  truth; `modules.stars` is its maintained cache.
+- **Namespace membership (owner / contributor).** Namespaces are no longer single-owner. A
+  `namespace_members` join table grants access: both roles publish/amend/yank, but only an **owner**
+  can add/remove members, promote to owner, or revoke access. `GET/POST/DELETE
+  /api/v1/namespaces/{ns}/members` (owner-gated mutations; last owner cannot be removed) and ops
+  commands `marketplace add-member|remove-member|list-members`. Revocation is **namespace-scoped**
+  (removes the membership), not a global API-key kill.
+- **Popularity.** `modules.views` (bumped on a module-detail view) and `modules.search_hits` (bumped
+  for every module surfaced in a search page) blend into `?sort=popular`.
+- **Download & last-updated refinements.** Per-version download counts (`VersionSummary.downloads`);
+  artifact-file fetches via `.../files/<parquet>` now count as downloads (so presigned/CDN redirects
+  are counted while log/provenance/logo fetches are not); a distinct module-level `created_at`
+  (first publish) surfaced on the card alongside `updated_at`. (Download counts and `updated_at`
+  themselves already existed since 0.x — this release refines them.)
+
+### Note
+- New sort keys: `?sort=stars|popular` (in addition to `downloads|recent|name`).
+- New rate-limit category `social` (star toggles), configurable via `MARKETPLACE_RATE_SOCIAL_PER_MIN`
+  (default 30/min).
+
 ## [0.5.0] — 2026-07-07
 
 Accommodates **just-dna-format / just-dna-compiler 0.2.0** (pins bumped to `>=0.2.0`). The DB stores

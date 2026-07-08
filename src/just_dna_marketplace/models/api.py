@@ -41,7 +41,11 @@ class ModuleCard(BaseModel):
     owner: Optional[str]
     stats: CardStats
     downloads: int
+    stars: int = 0
+    views: int = 0
+    created_at: str = ""  # first-publish time (distinct from updated_at)
     updated_at: str
+    starred_by_me: bool = False  # true when the authenticated caller has starred this module
     featured: bool = False
 
 
@@ -54,6 +58,7 @@ class VersionSummary(BaseModel):
     yanked: bool
     signed: bool = False  # carries an Ed25519 signature over artifact.digest (SPEC §5)
     needs_upgrade: bool = False  # set by the `revalidate` audit: fails the current contract
+    downloads: int = 0  # per-version download count (0.6.0)
     created_at: str
     changelog: str
     manifest_url: str
@@ -81,3 +86,33 @@ class WhoAmI(BaseModel):
 
     account: str
     namespaces: list[str]
+
+
+class MemberEntry(BaseModel):
+    """One namespace member: an account and its role (`owner` | `contributor`)."""
+
+    account: str
+    role: str
+
+
+class MemberList(BaseModel):
+    """Members of a namespace (`GET /namespaces/{ns}/members`)."""
+
+    namespace: str
+    members: list[MemberEntry]
+
+
+class StarStatus(BaseModel):
+    """Star toggle result for a module (`PUT`/`DELETE .../star`)."""
+
+    namespace: str
+    name: str
+    stars: int
+    starred_by_me: bool
+
+
+class AddMemberRequest(BaseModel):
+    """Body for `POST /namespaces/{ns}/members`."""
+
+    account: str
+    role: str = "contributor"

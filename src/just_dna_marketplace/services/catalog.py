@@ -45,7 +45,7 @@ def _featured(repo: Repository, row: sqlite3.Row) -> bool:
     return bool(flags["featured"]) if flags else False
 
 
-def _card(repo: Repository, row: sqlite3.Row) -> ModuleCard:
+def _card(repo: Repository, row: sqlite3.Row, starred_by: Optional[int] = None) -> ModuleCard:
     manifest = _latest_manifest(repo, row)
     stats = manifest.stats if manifest else None
     card_stats = CardStats(
@@ -58,6 +58,7 @@ def _card(repo: Repository, row: sqlite3.Row) -> ModuleCard:
         pathogenic_count=stats.pathogenic_count if stats else 0,
         benign_count=stats.benign_count if stats else 0,
     )
+    starred = starred_by is not None and repo.is_starred(int(row["id"]), starred_by)
     return ModuleCard(
         namespace=row["namespace"],
         name=row["name"],
@@ -75,7 +76,11 @@ def _card(repo: Repository, row: sqlite3.Row) -> ModuleCard:
         owner=row["owner"],
         stats=card_stats,
         downloads=row["downloads"],
+        stars=row["stars"],
+        views=row["views"],
+        created_at=row["created_at"],
         updated_at=row["updated_at"],
+        starred_by_me=bool(starred),
         featured=_featured(repo, row),
     )
 
@@ -88,6 +93,7 @@ def _version_summary(row: sqlite3.Row, namespace: str, name: str) -> VersionSumm
         yanked=bool(row["yanked"]),
         signed=_version_signed(row),
         needs_upgrade=bool(row["needs_upgrade"]) if "needs_upgrade" in row.keys() else False,
+        downloads=int(row["downloads"]) if "downloads" in row.keys() else 0,
         created_at=row["created_at"],
         changelog=row["changelog"],
         manifest_url=_manifest_url(namespace, name, row["version"]),
@@ -103,21 +109,25 @@ def _version_signed(row: sqlite3.Row) -> bool:
 
 
 def list_modules(
-    repo: Repository, *, page: int, per_page: int, **filters: object
+    repo: Repository, *, page: int, per_page: int, starred_by: Optional[int] = None, **filters: object
 ) -> Page[ModuleCard]:
     rows, total = repo.search_modules(
         limit=per_page, offset=(page - 1) * per_page, **filters  # type: ignore[arg-type]
     )
+    # Popularity: every module that surfaced in this result page takes one search-hit.
+    repo.increment_search_hits([int(r["id"]) for r in rows])
     return Page[ModuleCard](
-        items=[_card(repo, r) for r in rows], total=total, page=page, per_page=per_page
+        items=[_card(repo, r, starred_by) for r in rows], total=total, page=page, per_page=per_page
     )
 
 
-def module_detail(repo: Repository, namespace: str, name: str) -> Optional[ModuleDetail]:
+def module_detail(
+    repo: Repository, namespace: str, name: str, starred_by: Optional[int] = None
+) -> Optional[ModuleDetail]:
     row = repo.get_module_row(namespace, name)
     if row is None:
         return None
-    card = _card(repo, row)
+    card = _card(repo, row, starred_by)
     versions = repo.get_versions(row["id"])
     manifest = _latest_manifest(repo, row)
     data = card.model_dump()

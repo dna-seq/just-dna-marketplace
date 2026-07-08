@@ -62,6 +62,63 @@ def issue_key(account: str, namespace: list[str] = typer.Option([], "--namespace
     typer.echo(f"API key: {key}")
 
 
+@app.command("add-member")
+def add_member(
+    namespace: str,
+    account: str,
+    role: str = typer.Option("contributor", "--role", "-r", help="owner | contributor"),
+) -> None:
+    """Add or promote an account in a namespace (ops). Both roles publish; only owners manage."""
+    if role not in ("owner", "contributor"):
+        raise typer.BadParameter("role must be 'owner' or 'contributor'")
+    settings = get_settings()
+    repo = Repository(connect(settings.db_path))
+    if repo.namespace_owner(namespace) is None:
+        typer.echo(f"namespace not found: {namespace}")
+        raise typer.Exit(code=1)
+    row = repo.account_by_name(account)
+    if row is None:
+        typer.echo(f"account not found: {account}")
+        raise typer.Exit(code=1)
+    repo.add_member(namespace, int(row["id"]), role)
+    typer.echo(f"{namespace}: {account} is now {role}")
+
+
+@app.command("remove-member")
+def remove_member(namespace: str, account: str) -> None:
+    """Revoke an account's membership in a namespace (ops). Refuses to remove the last owner."""
+    settings = get_settings()
+    repo = Repository(connect(settings.db_path))
+    row = repo.account_by_name(account)
+    if row is None:
+        typer.echo(f"account not found: {account}")
+        raise typer.Exit(code=1)
+    account_id = int(row["id"])
+    if (
+        repo.namespace_role(namespace, account_id) == "owner"
+        and repo.count_namespace_owners(namespace) <= 1
+    ):
+        typer.echo(f"refusing to remove the last owner of {namespace}")
+        raise typer.Exit(code=1)
+    if not repo.remove_member(namespace, account_id):
+        typer.echo(f"{account} is not a member of {namespace}")
+        raise typer.Exit(code=1)
+    typer.echo(f"{namespace}: removed {account}")
+
+
+@app.command("list-members")
+def list_members(namespace: str) -> None:
+    """List a namespace's members and their roles (ops)."""
+    settings = get_settings()
+    repo = Repository(connect(settings.db_path))
+    members = repo.list_members(namespace)
+    if not members:
+        typer.echo(f"{namespace}: no members (namespace may not exist)")
+        return
+    for m in members:
+        typer.echo(f"  {m['role']:<12} {m['account']}")
+
+
 @app.command("remove-module")
 def remove_module(
     namespace: str, name: str, yes: bool = typer.Option(False, "--yes", "-y")

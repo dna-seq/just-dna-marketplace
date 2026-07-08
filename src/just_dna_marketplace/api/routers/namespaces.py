@@ -10,16 +10,21 @@ from just_dna_marketplace.api.deps import (
     Account,
     get_repo,
     require_account,
+    require_namespace_member,
+    require_namespace_owner,
     settings_dep,
 )
 from just_dna_marketplace.config import Settings
 from just_dna_marketplace.db.repository import Repository
+from just_dna_marketplace.models.api import AddMemberRequest, MemberEntry, MemberList
 
 router = APIRouter(prefix="/namespaces", tags=["namespaces"])
 
 RepoDep = Annotated[Repository, Depends(get_repo)]
 SettingsDep = Annotated[Settings, Depends(settings_dep)]
 AccountDep = Annotated[Account, Depends(require_account)]
+
+_VALID_ROLES = {"owner", "contributor"}
 
 
 class ClaimRequest(BaseModel):
@@ -54,3 +59,55 @@ def claim(repo: RepoDep, settings: SettingsDep, account: AccountDep, body: Claim
 
     repo.add_namespace(namespace, account.id)
     return {"namespace": namespace, "owner": account.name, "already_owned": False}
+
+
+@router.get("/{namespace}/members", response_model=MemberList)
+def list_members(repo: RepoDep, account: AccountDep, namespace: str) -> MemberList:
+    """List a namespace's members. Any member (owner or contributor) may read the roster."""
+    require_namespace_member(account, namespace)
+    return MemberList(
+        namespace=namespace,
+        members=[MemberEntry(account=r["account"], role=r["role"]) for r in repo.list_members(namespace)],
+    )
+
+
+@router.post("/{namespace}/members", status_code=status.HTTP_201_CREATED, response_model=MemberList)
+def add_member(
+    repo: RepoDep, account: AccountDep, namespace: str, body: AddMemberRequest
+) -> MemberList:
+    """Add or promote an account in a namespace. Owner-only. Both roles can publish; only owners
+    manage membership."""
+    require_namespace_owner(repo, account, namespace)
+    if body.role not in _VALID_ROLES:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail="invalid_role")
+    target = repo.account_by_name(body.account)
+    if target is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="account_not_found")
+    repo.add_member(namespace, int(target["id"]), body.role)
+    return MemberList(
+        namespace=namespace,
+        members=[MemberEntry(account=r["account"], role=r["role"]) for r in repo.list_members(namespace)],
+    )
+
+
+@router.delete("/{namespace}/members/{member}", response_model=MemberList)
+def remove_member(
+    repo: RepoDep, account: AccountDep, namespace: str, member: str
+) -> MemberList:
+    """Revoke an account's access to a namespace (removes the membership row — namespace-scoped, not
+    a global key revocation). Owner-only. Refuses to remove the last owner."""
+    require_namespace_owner(repo, account, namespace)
+    target = repo.account_by_name(member)
+    if target is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="account_not_found")
+    if (
+        repo.namespace_role(namespace, int(target["id"])) == "owner"
+        and repo.count_namespace_owners(namespace) <= 1
+    ):
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="last_owner")
+    if not repo.remove_member(namespace, int(target["id"])):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="not_a_member")
+    return MemberList(
+        namespace=namespace,
+        members=[MemberEntry(account=r["account"], role=r["role"]) for r in repo.list_members(namespace)],
+    )

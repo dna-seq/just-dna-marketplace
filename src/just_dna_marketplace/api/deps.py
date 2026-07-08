@@ -84,10 +84,40 @@ def require_account(
     raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="invalid_token")
 
 
+def optional_account(
+    repo: Annotated[Repository, Depends(get_repo)],
+    settings: Annotated[Settings, Depends(settings_dep)],
+    authorization: Annotated[Optional[str], Header()] = None,
+) -> Optional[Account]:
+    """Resolve the bearer credential to an account when present and valid; otherwise None.
+
+    For otherwise-anonymous reads that want to personalise a response (e.g. `starred_by_me`) without
+    forcing authentication. A malformed/expired token yields None rather than a 401.
+    """
+    if not authorization or not authorization.lower().startswith("bearer "):
+        return None
+    token = authorization.split(" ", 1)[1].strip()
+    row = repo.account_for_key(token)
+    if row is not None:
+        account_id = int(row["id"])
+        return Account(account_id, row["name"], repo.namespaces_for_account(account_id))
+    claims = decode_jwt(settings, token)
+    if claims is not None:
+        account_id = int(claims["account_id"])
+        return Account(account_id, claims["sub"], repo.namespaces_for_account(account_id))
+    return None
+
+
 def require_namespace_member(account: Account, namespace: str) -> None:
-    """Raise 403 unless `account` owns `namespace`."""
+    """Raise 403 unless `account` is a member (owner or contributor) of `namespace`."""
     if namespace not in account.namespaces:
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="not_namespace_member")
+
+
+def require_namespace_owner(repo: Repository, account: Account, namespace: str) -> None:
+    """Raise 403 unless `account` is an **owner** of `namespace` (member-management actions)."""
+    if repo.namespace_role(namespace, account.id) != "owner":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="not_namespace_owner")
 
 
 def _rate_identity(request: Request) -> str:

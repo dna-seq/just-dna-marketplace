@@ -279,10 +279,11 @@ unsigned, and verification behaves exactly as before.
 | Artifact storage | HF Hub datasets (hybrid) or S3/MinIO. Immutable, content-addressed by digest (`artifacts/sha256/<digest>/…`). |
 | Search / facets | DB full-text over title/description + side-table joins for `?gene=` / `?category=`. |
 | Versioning | SemVer for ordering + `artifact.digest` for identity/integrity (§6). |
-| Auth & ownership | Bearer tokens. A `namespace` is owned by exactly one account (or an org with members). Publish under a namespace requires membership. |
+| Auth & ownership | Bearer tokens. A `namespace` has **members** with roles (`owner` / `contributor`) via `namespace_members`. Both roles publish/amend/yank; only an owner manages membership and revokes access (namespace-scoped, not a global key kill). Publishing under a namespace requires membership. |
 | Publish validation | **Always** run `validate_spec()`. **Default** server-side `compile_module()` (see below). |
 | Integrity | Per-file SHA-256 + Merkle-root `artifact.digest` + input-CSV hashes (§5). |
-| Rate limiting | Per-token token buckets: publish 10/h, download 1000/h, search 60/min. Anonymous reads allowed but throttled harder. |
+| Community & discovery | GitHub-style **stars** (a favourite; `sort=stars`), **popularity** = module `views` + `search_hits` (`sort=popular`), module + per-version **download** counts, and module `created_at`/`updated_at`. |
+| Rate limiting | Per-token token buckets: publish 10/h, download 1000/h, search 60/min, social (star toggles) 30/min. Anonymous reads allowed but throttled harder. |
 
 **Validate vs. re-compile on publish:**
 - **Minimum (always):** run `validate_spec()` on the uploaded spec (reuses
@@ -318,9 +319,11 @@ responses paginate with `?page`, `?per_page` (max 100) → `{items, total, page,
 | 9 | POST | `/modules/{ns}/{name}/versions/{v}/yank` | bearer | Yank (unlist, keep artifact) |
 | 10 | POST | `/auth/tokens` | credentials | Issue a token |
 | 11 | GET | `/auth/whoami` | bearer | Identity + namespaces |
+| 12 | PUT/DELETE | `/modules/{ns}/{name}/star` | bearer | Star / unstar (favourite) |
+| 13 | GET/POST/DELETE | `/namespaces/{ns}/members[/{account}]` | bearer (POST/DELETE: owner) | List / add-promote / revoke members |
 
 Search params on #1: `?q=`, `?category=`, `?gene=`, `?genome_build=`, `?owner=`,
-`?license=`, `?sort=downloads|recent|name`.
+`?license=`, `?sort=downloads|recent|name|stars|popular`.
 
 ### 8.2 List / search — `GET /modules`
 
