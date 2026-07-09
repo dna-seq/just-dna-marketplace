@@ -6,6 +6,13 @@ All notable changes to **just-dna-registry**. Format follows
 Full API: [API-REFERENCE.md](API-REFERENCE.md) · client: [CLIENT.md](CLIENT.md) · plan:
 [ROADMAP.md](ROADMAP.md).
 
+## [0.9.1] — 2026-07-09
+
+### Added
+- **`latest` version sentinel** for downloads. `registry-client download <ns> <name> latest <dest>`
+  (and `--tarball`) resolves the module's current latest non-yanked version server-side; the SDK's
+  `download`/`get_tarball` accept `"latest"` too (via `RegistryClient.resolve_version`).
+
 ## [0.9.0] — 2026-07-09
 
 **Renamed `just-dna-marketplace` → `just-dna-registry`.** "Marketplace" implied a paid/commercial
@@ -397,6 +404,7 @@ Initial registry service (internal builds; superseded by 0.2.0 packaging).
 - `.env.template`, `docs/SPEC.md`, `docs/ROADMAP.md`.
 
 [0.8.1]: #081--2026-07-09
+[0.9.1]: #091--2026-07-09
 [0.9.0]: #090--2026-07-09
 [0.8.0]: #080--2026-07-09
 [0.7.1]: #071--2026-07-08

@@ -1,6 +1,6 @@
 [project]
 name = "just-dna-registry"
-version = "0.9.0"
+version = "0.9.1"
 description = "Reference client (and optional server) for the just-dna annotation module registry"
 readme = "README.md"
 requires-python = ">=3.13"

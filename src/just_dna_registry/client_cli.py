@@ -91,12 +91,13 @@ def list_modules(
 def download(
     namespace: str,
     name: str,
-    version: str,
+    version: str = typer.Argument(..., help="A version, or 'latest' for the current latest"),
     dest: Path = typer.Argument(..., help="Directory to extract into, or the .tar.gz path with --tarball"),
     tarball: bool = typer.Option(False, "--tarball", help="Fetch a single streamable tar.gz instead"),
     url: Optional[str] = UrlOpt,
 ) -> None:
-    """Download a version's artifact (+ logs): verify-then-install, or a single tar.gz."""
+    """Download a version's artifact (+ logs): verify-then-install, or a single tar.gz.
+    `version` accepts `latest`."""
     with _client(url, None) as c:
         if tarball:
             path = c.get_tarball(namespace, name, version, dest)

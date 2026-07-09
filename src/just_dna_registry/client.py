@@ -146,6 +146,16 @@ class RegistryClient:
     def get_module(self, namespace: str, name: str) -> dict:
         return self._json(self._http.get(f"/modules/{namespace}/{name}"))
 
+    def resolve_version(self, namespace: str, name: str, version: str) -> str:
+        """Map the sentinel `"latest"` to the module's current latest (non-yanked) version; any other
+        value passes through unchanged. Raises `RegistryError` if the module has no live version."""
+        if version != "latest":
+            return version
+        latest = self.get_module(namespace, name).get("latest_version")
+        if not latest:
+            raise RegistryError(404, f"{namespace}/{name} has no published version")
+        return latest
+
     def versions(self, namespace: str, name: str) -> dict:
         return self._json(self._http.get(f"/modules/{namespace}/{name}/versions"))
 
@@ -206,9 +216,10 @@ class RegistryClient:
     ) -> ModuleManifest:
         """Download a version's artifact (+ logs/logo/provenance) into `dest` and verify it.
 
-        When `public_key` (base64 raw, pinned out-of-band) is given, the manifest's Ed25519
-        signature over `artifact.digest` is enforced. Returns the verified manifest."""
+        `version` may be `"latest"`. When `public_key` (base64 raw, pinned out-of-band) is given, the
+        manifest's Ed25519 signature over `artifact.digest` is enforced. Returns the verified manifest."""
         self.assert_compatible()  # a format mismatch shows up as a digest failure — catch it first
+        version = self.resolve_version(namespace, name, version)
         dest = Path(dest)
         dest.mkdir(parents=True, exist_ok=True)
         listing = self._json(
@@ -301,7 +312,9 @@ class RegistryClient:
         return self._json(resp)
 
     def get_tarball(self, namespace: str, name: str, version: str, dest: Path) -> Path:
-        """Download a version as a single streamable `tar.gz` to `dest`. Returns the path."""
+        """Download a version as a single streamable `tar.gz` to `dest`. `version` may be `"latest"`.
+        Returns the path."""
+        version = self.resolve_version(namespace, name, version)
         resp = self._http.get(
             f"/modules/{namespace}/{name}/versions/{version}/download", params={"format": "tarball"}
         )

@@ -33,6 +33,12 @@ def _seed_module(seed, name: str = _NAME, genes=("LPA",), created_at="2025-01-01
     return seed(_NS, name, _VER, genes=list(genes), categories=["cardio"], created_at=created_at)
 
 
+async def test_download_latest_resolves(sdk, seed) -> None:
+    _seed_module(seed)  # publishes _NAME @ _VER; latest_version == _VER
+    assert await asyncio.to_thread(lambda: sdk.resolve_version(_NS, _NAME, "latest")) == _VER
+    assert await asyncio.to_thread(lambda: sdk.resolve_version(_NS, _NAME, "9.9.9")) == "9.9.9"
+
+
 async def test_whoami_and_profile(sdk) -> None:
     who = await asyncio.to_thread(sdk.whoami)
     assert who["account"] == "antonkulaga" and who["type"] == "user"
