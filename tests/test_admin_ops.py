@@ -59,6 +59,38 @@ def test_export_import_roundtrip_to_fresh_db(
     assert repo2.search_modules()[1] == 0
 
 
+def test_export_keys_refuses_missing_db(tmp_path: Path, monkeypatch) -> None:
+    # A relative/wrong db_path must NOT silently create an empty DB and crash on `no such table`.
+    missing = tmp_path / "nope.db"
+    monkeypatch.setenv("REGISTRY_DB_PATH", str(missing))
+    monkeypatch.setenv("REGISTRY_STORAGE_BACKEND", "local")
+    monkeypatch.setenv("REGISTRY_LOCAL_STORAGE_DIR", str(tmp_path / "art"))
+    get_settings.cache_clear()
+    result = CliRunner().invoke(app, ["export-keys"])
+    assert result.exit_code != 0
+    assert not missing.exists()  # refused before creating a stray empty DB
+    get_settings.cache_clear()
+
+
+def test_export_keys_migrates_a_stale_pre_0_9_db(tmp_path: Path, monkeypatch) -> None:
+    # A real (pre-0.9) DB lacks funding_url etc.; export-keys must run the additive migration first,
+    # not crash with `no such column`. Simulate the minimal legacy accounts table.
+    db = tmp_path / "old.db"
+    conn = connect(db)
+    conn.execute("CREATE TABLE accounts (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE)")
+    conn.execute("INSERT INTO accounts(name) VALUES ('erik')")
+    conn.commit()
+    conn.close()
+    monkeypatch.setenv("REGISTRY_DB_PATH", str(db))
+    monkeypatch.setenv("REGISTRY_STORAGE_BACKEND", "local")
+    monkeypatch.setenv("REGISTRY_LOCAL_STORAGE_DIR", str(tmp_path / "art"))
+    get_settings.cache_clear()
+    result = CliRunner().invoke(app, ["export-keys"])
+    assert result.exit_code == 0, result.output
+    assert "erik" in result.stdout  # exported after the in-place migration added the new columns
+    get_settings.cache_clear()
+
+
 def test_reset_db_cli_requires_typed_confirmation(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("REGISTRY_DB_PATH", str(tmp_path / "m.db"))
     monkeypatch.setenv("REGISTRY_STORAGE_BACKEND", "local")

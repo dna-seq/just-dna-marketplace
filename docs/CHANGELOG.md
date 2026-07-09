@@ -6,12 +6,27 @@ All notable changes to **just-dna-registry**. Format follows
 Full API: [API-REFERENCE.md](API-REFERENCE.md) · client: [CLIENT.md](CLIENT.md) · plan:
 [ROADMAP.md](ROADMAP.md).
 
-## [0.9.1] — 2026-07-09
+## [0.9.1] — 2026-07-10
 
 ### Added
 - **`latest` version sentinel** for downloads. `registry-client download <ns> <name> latest <dest>`
   (and `--tarball`) resolves the module's current latest non-yanked version server-side; the SDK's
   `download`/`get_tarball` accept `"latest"` too (via `RegistryClient.resolve_version`).
+
+### Fixed
+- **The 0.9 rename silently moved the default DB path** `data/marketplace.db` → `data/registry.db`
+  (the rebrand sweep hit the default string in `config.py`), orphaning existing local-backend
+  catalogs. **Recovery:** `mv data/marketplace.db data/registry.db` (or set
+  `REGISTRY_DB_PATH=data/marketplace.db`). New **startup guard** (`validate_db_path`): the server now
+  **refuses to boot** if the configured DB is absent but a non-empty legacy `marketplace.db` sits
+  beside it, instead of silently serving an empty catalog — with a message telling you to `mv` or
+  set `REGISTRY_DB_PATH`.
+- **`export-keys` no longer creates a stray empty DB / crashes with `no such table`.** Read-only ops
+  refuse a missing/empty DB with a clear message showing the **resolved absolute path** (and the
+  legacy-`marketplace.db` hint when present), before `connect()` can create a stray file; they also
+  run the additive migration so a pre-0.9 DB is brought up to schema before reading. `reset-db`
+  prints the resolved absolute path in its confirmation. The DB-location knob is `REGISTRY_DB_PATH`
+  (documented in `.env.template`).
 
 ## [0.9.0] — 2026-07-09
 
@@ -404,7 +419,7 @@ Initial registry service (internal builds; superseded by 0.2.0 packaging).
 - `.env.template`, `docs/SPEC.md`, `docs/ROADMAP.md`.
 
 [0.8.1]: #081--2026-07-09
-[0.9.1]: #091--2026-07-09
+[0.9.1]: #091--2026-07-10
 [0.9.0]: #090--2026-07-09
 [0.8.0]: #080--2026-07-09
 [0.7.1]: #071--2026-07-08

@@ -1,5 +1,22 @@
 # Contract upgrades & the stale-module procedure
 
+## 0.9 default DB path moved (operator note)
+
+The 0.9 `marketplace → registry` rebrand changed the **default** `db_path` from `data/marketplace.db`
+to `data/registry.db` (local backend). If you deployed on the default, adopt the existing DB before
+starting 0.9:
+
+```bash
+mv data/marketplace.db data/registry.db     # or set REGISTRY_DB_PATH=data/marketplace.db (.env.template)
+```
+
+The schema itself is migrated **additively in place** the first time `init_db` runs — i.e. on
+`registry serve` startup, or `registry init-db` (adds `funding_url`, account `type`, `org_members`,
+`versions.published_by`; renames role `contributor→member`). Read-only CLI ops (`export-keys`) now
+also run that migration and **refuse a missing/empty DB** (showing the resolved path + the
+legacy-`marketplace.db` hint) instead of creating a stray empty file. The server **refuses to boot**
+if `registry.db` is absent while a non-empty `marketplace.db` sits beside it (`validate_db_path`).
+
 ## 0.9.0 RBAC migration (operator note)
 
 0.9.0 renamed the namespace role `contributor` → `member` (migrated in place by `init_db`) and made

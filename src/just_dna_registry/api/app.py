@@ -21,7 +21,7 @@ from just_dna_registry.db.repository import Repository
 from just_dna_registry.db.schema import connect, init_db
 from just_dna_registry.logging_setup import configure_logging
 from just_dna_registry.ratelimit import default_limiter
-from just_dna_registry.startup import validate_hf_access
+from just_dna_registry.startup import validate_db_path, validate_hf_access
 from just_dna_registry.storage.base import StorageBackend
 from just_dna_registry.storage.local import LocalStorage
 
@@ -42,6 +42,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     settings = settings or get_settings()
     configure_logging(settings)
     validate_hf_access(settings)  # exits(1) if hf backend + missing/read-only token; no-op for local
+    validate_db_path(settings)  # exits(1) on the 0.9 rename orphan (legacy marketplace.db, no registry.db)
     app = FastAPI(title="just-dna-registry", version=__version__)
 
     conn = connect(settings.db_path)

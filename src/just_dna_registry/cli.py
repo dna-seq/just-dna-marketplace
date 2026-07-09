@@ -17,6 +17,7 @@ from just_dna_registry.db.repository import Repository
 from just_dna_registry.db.schema import connect, init_db
 from just_dna_registry.models.api import VALID_ACCOUNT_TYPES
 from just_dna_registry.permissions import VALID_NS_ROLES, VALID_ORG_ROLES
+from just_dna_registry.startup import legacy_db_message
 from just_dna_registry.services.pmid_check import verify_pmids
 from just_dna_registry.services.revalidate import gather_pmids, revalidate_version
 from just_dna_registry.services.upgrade import (
@@ -28,6 +29,27 @@ from just_dna_registry.storage.base import StorageBackend
 from just_dna_registry.storage.local import LocalStorage
 
 app = typer.Typer(help="just-dna-registry admin CLI", no_args_is_help=True)
+
+
+def _open_existing_db(settings: Settings) -> Repository:
+    """Open an EXISTING catalog DB for a read-only op. Refuses a missing or empty/uninitialized file
+    (a relative `db_path` resolved against the wrong working directory is the classic trap) instead
+    of silently creating a stray empty DB and then failing on `no such table`."""
+    path = settings.db_path
+    if not path.exists():
+        raise typer.BadParameter(
+            legacy_db_message(path)
+            or f"no registry database at {path.resolve()} — set REGISTRY_DB_PATH to the server's DB"
+        )
+    conn = connect(path)
+    if conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='accounts'"
+    ).fetchone() is None:
+        raise typer.BadParameter(
+            f"{path.resolve()} has no registry schema (empty/uninitialized) — wrong REGISTRY_DB_PATH?"
+        )
+    init_db(conn)  # additive/idempotent: bring a pre-0.9 DB up to the current schema (adds funding_url, …)
+    return Repository(conn)
 
 
 def _storage(settings: Settings) -> StorageBackend:
@@ -95,7 +117,7 @@ def export_keys(
     (The Ed25519 *signing* key is a separate PEM file at `REGISTRY_SIGNING_KEY`, never in the DB —
     copy that file directly; it is unaffected by `reset-db`.)"""
     settings = get_settings()
-    repo = Repository(connect(settings.db_path))
+    repo = _open_existing_db(settings)  # refuse a missing/empty DB (don't create a stray one)
     payload = json.dumps(repo.export_auth(), indent=2)
     if out is not None:
         out.write_text(payload + "\n", encoding="utf-8")
@@ -127,7 +149,7 @@ def reset_db(
     Does NOT touch artifact storage. Requires typing RESET to confirm (destructive)."""
     settings = get_settings()
     scope = "the catalog" if keep_keys else "the catalog AND all accounts + API keys"
-    typer.echo(f"This will permanently delete {scope} in {settings.db_path}. Artifacts are untouched.")
+    typer.echo(f"This will permanently delete {scope} in {settings.db_path.resolve()}. Artifacts are untouched.")
     if typer.prompt("Type RESET to confirm") != "RESET":
         raise typer.Abort()
     conn = connect(settings.db_path)
