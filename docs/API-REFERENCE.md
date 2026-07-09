@@ -306,14 +306,15 @@ owner). Global key/account revocation stays an ops-CLI action (`marketplace revo
 
 ### 13. `GET` / `PATCH /api/v1/auth/whoami`  *(bearer)*
 `GET 200 → {"account": "antonkulaga", "namespaces": ["just-dna-seq"], "type": "user",
-"display_name": null, "email": null}` — `namespaces` is every namespace the caller is a member of
-(owner or contributor); `type` is the `user`|`org` discriminator; `email` is **private** (only ever
-returned here). `401` on missing/invalid token.
+"display_name": null, "avatar_url": null, "email": null}` — `namespaces` is every namespace the
+caller is a member of (owner or contributor); `type` is the `user`|`org` discriminator; `avatar_url`
+is the public userpic; `email` is **private** (only ever returned here). `401` on missing/invalid
+token.
 
-`PATCH` edits the caller's own profile — body `{"email"?, "display_name"?}` (omitted fields
-unchanged, `""` clears a field). Returns the updated identity. `type` is **not** self-editable (set
-at account creation via `marketplace issue-key --type`). Errors: `401`, `422` (bad email),
-`409 email_taken` (another account already uses that email).
+`PATCH` edits the caller's own profile — body `{"email"?, "display_name"?, "avatar_url"?}` (omitted
+fields unchanged, `""` clears a field). Returns the updated identity. `type` is **not** self-editable
+(set at account creation via `marketplace issue-key --type`). Errors: `401`, `422` (bad email /
+non-http(s) avatar_url), `409 email_taken` (another account already uses that email).
 
 ### 18. `POST /api/v1/auth/tokens`
 Optional JWT session. Body `{"api_key": "mk_live_…"}`. `200 → {"token": "<jwt>", "token_type":
@@ -377,8 +378,8 @@ changelog, manifest_url`. `downloads` is the per-version download count.
 
 ### WhoAmI
 `account: string` (handle), `namespaces: string[]` (every namespace the account is a member of),
-`type: "user"|"org"`, `display_name: string|null`, `email: string|null` (private — only returned to
-the account itself).
+`type: "user"|"org"`, `display_name: string|null`, `avatar_url: string|null` (public userpic),
+`email: string|null` (private — only returned to the account itself).
 
 ### MemberList
 `namespace: string, members: [{account: string, role: "owner"|"contributor"}]`.

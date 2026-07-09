@@ -41,7 +41,10 @@ truth** — knowing which published modules would fail *today's* contract.
      own `VariantRow.upgraded()` derivation to the stored `variants.csv` (back-populate
      `direction`/`stat_significance`/`clin_sig`, trim `state` to its derived legacy mirror), then
      re-publishes as the next PATCH through the normal server-side compile path. Dry-run by default;
-     `--apply` publishes. Idempotent — re-running finds nothing left to do. Scope with `-n`/`-m`.
+     `--apply` publishes. Scope with `-n`/`-m`. **Only a module's latest non-yanked version is
+     upgraded** — the original is immutable and stays drifted, so an older version already superseded
+     by a newer one is skipped (and `revalidate` reports it `superseded`, not `upgradable`).
+     Idempotent: once the latest is on-contract, re-running does nothing (no endless patch chain).
    - **Validator-failure upgrades** stay a manual transform + publish: apply the fix to the spec
      inputs (for PMID: `extract_pmids` → digit-only; drop or fix references that don't resolve
      online), then `marketplace-client publish … <new PATCH version>` under the new contract.

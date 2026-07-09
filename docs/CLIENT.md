@@ -100,6 +100,35 @@ Non-2xx responses raise **`MarketplaceError(status_code, detail)`**.
   — uploads a zip/tar.gz. `display` (`title/description/report_title/icon/color`) is used only for
   legacy parquet-only archives.
 
+### Identity & profile (token)
+
+- **`whoami() -> dict`** — `{account, namespaces, type, display_name, avatar_url, email}` (`email`
+  only ever returned to the account itself).
+- **`update_profile(*, email=None, display_name=None, avatar_url=None) -> dict`** — edit your own
+  profile; only the fields passed are sent, `""` clears one. `type` is not self-editable.
+
+### Social & moderation (token)
+
+- **`star(ns, name)` / `unstar(ns, name) -> dict`** — toggle a favourite (idempotent).
+- **`reviews(ns, name, version=None) -> list[dict]`** — a module's (or one version's) reviews,
+  highlighted first (anonymous).
+- **`review(ns, name, version, *, rating, verdict=None, notes=None) -> list[dict]`** — post/update
+  your review of a version (one per account per version); returns the version's review list.
+- **`delete_review(ns, name, version) -> list[dict]`** — remove your own review.
+- **`highlight_review(ns, name, version, reviewer, *, highlighted=True) -> list[dict]`** — owner
+  highlights (or un-highlights) a review — the `curated` signal.
+- **`yank(ns, name, version)` / `unyank(...) -> dict`** — owner: drop from listings/`latest` (kept
+  fetchable) or reverse it.
+- **`members(ns) -> list[dict]`**, **`add_member(ns, account, role="contributor")`**,
+  **`remove_member(ns, account) -> dict`** — namespace membership (mutations are owner-only).
+
+### Discovery & stats
+
+- **`groups() -> list[dict]`** — the listing tabs `[{key, label, description}]`.
+- **`catalog_stats(namespace=None, *, group=None) -> dict`** — aggregate totals (modules,
+  namespaces, downloads, stars, views, reviews, curated, variants, studies, genes) by paging the
+  listing; there is no dedicated stats endpoint, so this rolls up the card fields.
+
 ### Helper
 
 - **`gather_spec_files(spec_dir) -> list[tuple[str, bytes]]`** — the uploadable (relative-name,

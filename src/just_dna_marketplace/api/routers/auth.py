@@ -45,6 +45,7 @@ def _whoami(repo: Repository, account: Account) -> WhoAmI:
         namespaces=account.namespaces,
         type=row["type"] if row else "user",
         display_name=row["display_name"] if row else None,
+        avatar_url=row["avatar_url"] if row else None,
         email=row["email"] if row else None,
     )
 
@@ -59,7 +60,10 @@ def update_profile(repo: RepoDep, account: AccountDep, body: ProfileUpdate) -> W
     """Edit the caller's own profile (email / display_name). Bearer = the account being edited; the
     `type` discriminator is not self-editable (set at creation by the admin CLI)."""
     try:
-        repo.set_account_profile(account.id, email=body.email, display_name=body.display_name)
+        repo.set_account_profile(
+            account.id, email=body.email, display_name=body.display_name,
+            avatar_url=body.avatar_url,
+        )
     except sqlite3.IntegrityError:
         raise HTTPException(status.HTTP_409_CONFLICT, detail="email_taken")
     return _whoami(repo, account)

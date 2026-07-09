@@ -33,6 +33,16 @@ def test_invalid_email_rejected(client: TestClient, api_key: str) -> None:
     assert client.patch(_WHOAMI, json={"email": "nope"}, headers=_auth(api_key)).status_code == 422
 
 
+def test_userpic_set_and_validated(client: TestClient, api_key: str) -> None:
+    ok = client.patch(_WHOAMI, json={"avatar_url": "https://ex.io/me.png"}, headers=_auth(api_key))
+    assert ok.status_code == 200 and ok.json()["avatar_url"] == "https://ex.io/me.png"
+    # Non-http(s) URL is rejected; "" clears it.
+    assert client.patch(_WHOAMI, json={"avatar_url": "javascript:alert(1)"},
+                        headers=_auth(api_key)).status_code == 422
+    client.patch(_WHOAMI, json={"avatar_url": ""}, headers=_auth(api_key))
+    assert client.get(_WHOAMI, headers=_auth(api_key)).json()["avatar_url"] is None
+
+
 def test_partial_update_leaves_other_field(client: TestClient, api_key: str) -> None:
     client.patch(_WHOAMI, json={"email": "a@b.io", "display_name": "A"}, headers=_auth(api_key))
     client.patch(_WHOAMI, json={"display_name": "Anton Kulaga"}, headers=_auth(api_key))

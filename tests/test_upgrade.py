@@ -11,7 +11,11 @@ from just_dna_format.manifest import ModuleManifest
 
 from just_dna_marketplace.config import Settings
 from just_dna_marketplace.services.revalidate import revalidate_version
-from just_dna_marketplace.services.upgrade import plan_variants_upgrade, upgrade_version
+from just_dna_marketplace.services.upgrade import (
+    is_latest_version,
+    plan_variants_upgrade,
+    upgrade_version,
+)
 from just_dna_marketplace.storage.base import version_key
 
 _YAML = """\
@@ -134,3 +138,29 @@ def test_upgrade_is_noop_when_no_drift(client: TestClient, api_key: str, app, se
         namespace="just-dna-seq", name="coronary", version="1.0.1", manifest=upgraded_manifest,
     )
     assert second is None
+
+
+def test_superseded_predecessor_is_not_re_upgraded(
+    client: TestClient, api_key: str, app, settings: Settings
+) -> None:
+    # The immutability bug: once 1.0.0 has been upgraded to 1.0.1, re-running upgrade on the still
+    # drifted 1.0.0 must NOT mint 1.0.2 (and 1.0.3, …) forever — the successor masks it.
+    manifest = _publish(client, api_key)
+    repo, storage = app.state.repo, app.state.storage
+    new_version, _ = upgrade_version(
+        repo=repo, storage=storage, settings=settings,
+        namespace="just-dna-seq", name="coronary", version="1.0.0", manifest=manifest,
+    )
+    assert new_version == "1.0.1"
+    assert is_latest_version(repo, "just-dna-seq", "coronary", "1.0.1")
+    assert not is_latest_version(repo, "just-dna-seq", "coronary", "1.0.0")
+
+    # 1.0.0 still *drifts* on its own bytes (immutable) …
+    assert plan_variants_upgrade(_VARIANTS).needed
+    # … but upgrading it is now a no-op — no 1.0.2 is created.
+    again = upgrade_version(
+        repo=repo, storage=storage, settings=settings,
+        namespace="just-dna-seq", name="coronary", version="1.0.0", manifest=manifest,
+    )
+    assert again is None
+    assert not repo.version_exists("just-dna-seq", "coronary", "1.0.2")

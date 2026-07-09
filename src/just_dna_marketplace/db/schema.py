@@ -143,6 +143,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE accounts ADD COLUMN email TEXT")
     if "display_name" not in acct_cols:
         conn.execute("ALTER TABLE accounts ADD COLUMN display_name TEXT")
+    if "avatar_url" not in acct_cols:
+        conn.execute("ALTER TABLE accounts ADD COLUMN avatar_url TEXT")  # userpic (public, http(s))
     if "type" not in acct_cols:
         conn.execute("ALTER TABLE accounts ADD COLUMN type TEXT NOT NULL DEFAULT 'user'")
     # One account per install-id / per email (NULLs are exempt — admin-made or profile-less accounts).

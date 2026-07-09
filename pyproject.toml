@@ -1,6 +1,6 @@
 [project]
 name = "just-dna-marketplace"
-version = "0.8.0"
+version = "0.8.1"
 description = "Reference client (and optional server) for the just-dna annotation module marketplace"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -45,4 +45,10 @@ marketplace = "just_dna_marketplace.cli:app"
 dev = [
     "just-dna-marketplace[server]",
     "pytest>=9.0.3",
+    "pytest-asyncio>=1.4.0",
 ]
+
+[tool.pytest.ini_options]
+# `auto` so `async def test_*` run without a per-test marker (used by the client SDK suite, which
+# bridges the sync client onto a worker thread while the ASGI app is driven in-process).
+asyncio_mode = "auto"

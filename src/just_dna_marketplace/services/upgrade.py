@@ -115,6 +115,16 @@ def plan_version_upgrade(
     return plan_variants_upgrade(variants)
 
 
+def is_latest_version(repo: Repository, namespace: str, name: str, version: str) -> bool:
+    """Whether `version` is the module's current latest (non-yanked) version.
+
+    Only the latest is upgrade-eligible: an upgrade re-publishes as a NEW patch, and the original is
+    immutable, so a superseded older version is masked — otherwise every run would forever mint a
+    fresh patch from the same un-upgraded bytes even though an upgraded successor already exists."""
+    row = repo.get_module_row(namespace, name)
+    return row is not None and row["latest_version"] == version
+
+
 def _next_free_patch(repo: Repository, namespace: str, name: str, version: str) -> str:
     """The next PATCH after `version` not already taken (`1.0.0` → `1.0.1`, skipping any in use)."""
     v = parse_version(version)
@@ -137,10 +147,13 @@ def upgrade_version(
 ) -> Optional[tuple[str, ModuleManifest]]:
     """Migrate a version's `variants.csv` to the 0.3 columns and re-publish as the next PATCH.
 
-    Returns `(new_version, new_manifest)`, or None when nothing needs upgrading (or the spec inputs
-    aren't retrievable). The re-publish runs the full server-side compile path, so the successor
-    carries a freshly-computed, trusted digest; the predecessor is left untouched.
+    Returns `(new_version, new_manifest)`, or None when nothing needs upgrading — including when
+    this version is **superseded** by a newer one (only the latest is upgraded; the original stays
+    immutable) or its spec inputs aren't retrievable. The re-publish runs the full server-side
+    compile path, so the successor carries a freshly-computed, trusted digest.
     """
+    if not is_latest_version(repo, namespace, name, version):
+        return None
     plan = plan_version_upgrade(storage, namespace, name, version, manifest)
     if plan is None or not plan.needed:
         return None

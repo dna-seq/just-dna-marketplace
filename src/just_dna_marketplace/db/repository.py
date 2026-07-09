@@ -97,19 +97,29 @@ class Repository:
         ).fetchone()
 
     def get_account(self, account_id: int) -> Optional[sqlite3.Row]:
-        """Full account row incl. the 0.8.0 profile fields (email/display_name/type)."""
+        """Full account row incl. the 0.8.x profile fields (email/display_name/avatar_url/type)."""
         return self.conn.execute(
-            "SELECT id, name, email, display_name, type FROM accounts WHERE id = ?", (account_id,)
+            "SELECT id, name, email, display_name, avatar_url, type FROM accounts WHERE id = ?",
+            (account_id,),
         ).fetchone()
 
     def set_account_profile(
-        self, account_id: int, *, email: Optional[str] = None, display_name: Optional[str] = None
+        self,
+        account_id: int,
+        *,
+        email: Optional[str] = None,
+        display_name: Optional[str] = None,
+        avatar_url: Optional[str] = None,
     ) -> None:
         """Self-service profile update. Only the fields passed are changed; an empty string clears a
-        field to NULL (so a user can remove an email/name)."""
+        field to NULL (so a user can remove an email/name/userpic)."""
         sets: list[str] = []
         params: list[Any] = []
-        for column, value in (("email", email), ("display_name", display_name)):
+        for column, value in (
+            ("email", email),
+            ("display_name", display_name),
+            ("avatar_url", avatar_url),
+        ):
             if value is not None:
                 sets.append(f"{column} = ?")
                 params.append(value or None)  # "" clears to NULL

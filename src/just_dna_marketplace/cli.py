@@ -16,7 +16,11 @@ from just_dna_marketplace.db.schema import connect, init_db
 from just_dna_marketplace.models.api import VALID_ACCOUNT_TYPES
 from just_dna_marketplace.services.pmid_check import verify_pmids
 from just_dna_marketplace.services.revalidate import gather_pmids, revalidate_version
-from just_dna_marketplace.services.upgrade import plan_version_upgrade, upgrade_version
+from just_dna_marketplace.services.upgrade import (
+    is_latest_version,
+    plan_version_upgrade,
+    upgrade_version,
+)
 from just_dna_marketplace.storage.base import StorageBackend
 from just_dna_marketplace.storage.local import LocalStorage
 
@@ -54,6 +58,7 @@ def issue_key(
     namespace: list[str] = typer.Option([], "--namespace", "-n"),
     email: str = typer.Option(None, "--email", help="Account contact email (private)"),
     display_name: str = typer.Option(None, "--display-name", help="Human display name"),
+    avatar_url: str = typer.Option(None, "--avatar-url", help="Userpic (public http(s) URL)"),
     account_type: str = typer.Option("user", "--type", help="Account type: user|org"),
 ) -> None:
     """Create an account (if needed), grant it namespaces, and print a fresh API key."""
@@ -65,8 +70,10 @@ def issue_key(
     repo = Repository(conn)
     account_id = repo.create_account(account)
     repo.set_account_type(account_id, account_type)
-    if email is not None or display_name is not None:
-        repo.set_account_profile(account_id, email=email, display_name=display_name)
+    if email is not None or display_name is not None or avatar_url is not None:
+        repo.set_account_profile(
+            account_id, email=email, display_name=display_name, avatar_url=avatar_url
+        )
     for ns in namespace:
         repo.add_namespace(ns, account_id)
     key = "mk_live_" + secrets.token_urlsafe(24)
@@ -241,7 +248,7 @@ def revalidate(
     init_db(conn)  # idempotent: ensures the needs_upgrade column exists on a pre-0.5.0 DB
     repo = Repository(conn)
     storage = _storage(settings)
-    counts = {"ok": 0, "upgradable": 0, "needs_upgrade": 0, "skipped": 0}
+    counts = {"ok": 0, "upgradable": 0, "needs_upgrade": 0, "superseded": 0, "skipped": 0}
     for row in repo.list_all_versions(namespace):
         ns, name, ver = row["namespace"], row["name"], row["version"]
         manifest = ModuleManifest.model_validate_json(row["manifest_json"])
@@ -260,18 +267,26 @@ def revalidate(
                     messages = [*messages, f"PMIDs not found at NCBI: {', '.join(missing)}"]
                 pmid_note = f"  [{len(pmids)} pmid(s) checked]"
 
+        # Mask a drifted OLD version once a newer one supersedes it: it's immutable and the module's
+        # latest is what an upgrade targets, so it isn't actionable (and must not drive a re-publish).
+        if status in ("upgradable", "needs_upgrade") and not is_latest_version(repo, ns, name, ver):
+            status = "superseded"
+            messages = [f"superseded by a newer version ({row['latest_version']}); not actionable"]
+
         counts[status] += 1
-        marker = {"ok": "✓", "upgradable": "⇧", "needs_upgrade": "✗", "skipped": "–"}[status]
+        marker = {"ok": "✓", "upgradable": "⇧", "needs_upgrade": "✗",
+                  "superseded": "·", "skipped": "–"}[status]
         typer.echo(f"{marker} {ns}/{name}@{ver} [{status}]{pmid_note}")
         for msg in messages[:5]:
             typer.echo(f"    {msg}")
-        # Both a validation failure and a 0.3 back-population are "re-publish me" states.
-        if set_flag and status in ("ok", "upgradable", "needs_upgrade"):
+        # Actionable states flag the version; ok/superseded clear it (superseded can't be fixed).
+        if set_flag and status in ("ok", "upgradable", "needs_upgrade", "superseded"):
             repo.set_needs_upgrade(ns, name, ver, status in ("upgradable", "needs_upgrade"))
 
     typer.echo(
         f"\n{counts['ok']} ok, {counts['upgradable']} upgradable, "
-        f"{counts['needs_upgrade']} needs_upgrade, {counts['skipped']} skipped"
+        f"{counts['needs_upgrade']} needs_upgrade, {counts['superseded']} superseded, "
+        f"{counts['skipped']} skipped"
         + ("" if set_flag else "  (report only; pass --set-flag to persist)")
     )
 
@@ -300,6 +315,10 @@ def upgrade(
     for row in repo.list_all_versions(namespace):
         ns, name, ver = row["namespace"], row["name"], row["version"]
         if module is not None and name != module:
+            continue
+        # Only the latest version is upgrade-eligible — a superseded older version is immutable and
+        # already replaced, so re-upgrading it would just mint an endless chain of patches.
+        if not is_latest_version(repo, ns, name, ver):
             continue
         manifest = ModuleManifest.model_validate_json(row["manifest_json"])
         if not apply:

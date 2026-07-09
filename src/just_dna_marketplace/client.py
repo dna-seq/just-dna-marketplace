@@ -311,3 +311,148 @@ class MarketplaceClient:
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(resp.content)
         return dest
+
+    # ── Identity & profile ──────────────────────────────────────────────────────
+
+    def whoami(self) -> dict:
+        """The caller's identity + profile (`account`, `namespaces`, `type`, `display_name`,
+        `avatar_url`, `email`). `email` is only ever returned to the account itself."""
+        return self._json(self._http.get("/auth/whoami"))
+
+    def update_profile(
+        self,
+        *,
+        email: Optional[str] = None,
+        display_name: Optional[str] = None,
+        avatar_url: Optional[str] = None,
+    ) -> dict:
+        """Edit the caller's own profile. Only the fields passed are sent; pass `""` to clear one.
+        `type` is not self-editable. Returns the updated identity."""
+        body = {
+            k: v
+            for k, v in (("email", email), ("display_name", display_name), ("avatar_url", avatar_url))
+            if v is not None
+        }
+        return self._json(self._http.patch("/auth/whoami", json=body))
+
+    # ── Namespace membership (owner-gated mutations) ────────────────────────────
+
+    def members(self, namespace: str) -> list[dict]:
+        """List a namespace's members `[{account, role}]` (any member may read)."""
+        return self._json(self._http.get(f"/namespaces/{namespace}/members"))["members"]
+
+    def add_member(self, namespace: str, account: str, role: str = "contributor") -> dict:
+        """Add or promote a member (owner-only). `role` = `owner` | `contributor`."""
+        return self._json(
+            self._http.post(f"/namespaces/{namespace}/members", json={"account": account, "role": role})
+        )
+
+    def remove_member(self, namespace: str, account: str) -> dict:
+        """Revoke a member's namespace access (owner-only; can't remove the last owner)."""
+        return self._json(self._http.delete(f"/namespaces/{namespace}/members/{account}"))
+
+    # ── Yank / un-yank (owner-gated) ────────────────────────────────────────────
+
+    def yank(self, namespace: str, name: str, version: str) -> dict:
+        """Yank a version — drop it from default listings + `latest`, keep it fetchable."""
+        return self._json(
+            self._http.post(
+                f"/modules/{namespace}/{name}/versions/{version}/yank", json={"yanked": True}
+            )
+        )
+
+    def unyank(self, namespace: str, name: str, version: str) -> dict:
+        """Reverse a yank."""
+        return self._json(
+            self._http.post(
+                f"/modules/{namespace}/{name}/versions/{version}/yank", json={"yanked": False}
+            )
+        )
+
+    # ── Social: stars & reviews ─────────────────────────────────────────────────
+
+    def star(self, namespace: str, name: str) -> dict:
+        """Star a module (idempotent). Returns `{namespace, name, stars, starred_by_me}`."""
+        return self._json(self._http.put(f"/modules/{namespace}/{name}/star"))
+
+    def unstar(self, namespace: str, name: str) -> dict:
+        """Remove the caller's star (idempotent)."""
+        return self._json(self._http.delete(f"/modules/{namespace}/{name}/star"))
+
+    def reviews(self, namespace: str, name: str, version: Optional[str] = None) -> list[dict]:
+        """Reviews/audits for a module, or one version — highlighted first. Anonymous."""
+        path = f"/modules/{namespace}/{name}"
+        path += f"/versions/{version}/reviews" if version is not None else "/reviews"
+        return self._json(self._http.get(path))
+
+    def review(
+        self,
+        namespace: str,
+        name: str,
+        version: str,
+        *,
+        rating: int,
+        verdict: Optional[str] = None,
+        notes: Optional[str] = None,
+    ) -> list[dict]:
+        """Post/update the caller's review of a version (one per account per version). Returns the
+        version's current review list."""
+        body: dict[str, Any] = {"rating": rating}
+        if verdict is not None:
+            body["verdict"] = verdict
+        if notes is not None:
+            body["notes"] = notes
+        return self._json(
+            self._http.put(f"/modules/{namespace}/{name}/versions/{version}/reviews", json=body)
+        )
+
+    def delete_review(self, namespace: str, name: str, version: str) -> list[dict]:
+        """Remove the caller's own review of a version."""
+        return self._json(
+            self._http.delete(f"/modules/{namespace}/{name}/versions/{version}/reviews")
+        )
+
+    def highlight_review(
+        self, namespace: str, name: str, version: str, reviewer: str, *, highlighted: bool = True
+    ) -> list[dict]:
+        """Owner action: highlight (or un-highlight) a reviewer's review — the `curated` signal."""
+        path = f"/modules/{namespace}/{name}/versions/{version}/reviews/{reviewer}/highlight"
+        resp = self._http.put(path) if highlighted else self._http.delete(path)
+        return self._json(resp)
+
+    # ── Discovery & aggregate stats ─────────────────────────────────────────────
+
+    def groups(self) -> list[dict]:
+        """The listing groups (tabs) the catalog defines: `[{key, label, description}]`."""
+        return self._json(self._http.get("/modules/groups"))
+
+    def catalog_stats(self, namespace: Optional[str] = None, *, group: Optional[str] = None) -> dict:
+        """Aggregate catalog stats by paging the listing — there is no dedicated stats endpoint, so
+        this rolls up the card fields (`get_module`/`list_modules`). Optionally scoped to a namespace
+        or a group. Returns totals across the matched modules."""
+        agg = {
+            "modules": 0, "namespaces": 0, "downloads": 0, "stars": 0, "views": 0,
+            "reviews": 0, "curated": 0, "variants": 0, "studies": 0, "genes": 0,
+        }
+        seen_namespaces: set[str] = set()
+        page = 1
+        while True:
+            body = self.list_modules(page=page, per_page=100, namespace=namespace, group=group)
+            items = body.get("items", [])
+            for card in items:
+                stats = card.get("stats") or {}
+                agg["modules"] += 1
+                seen_namespaces.add(card["namespace"])
+                agg["downloads"] += card.get("downloads", 0)
+                agg["stars"] += card.get("stars", 0)
+                agg["views"] += card.get("views", 0)
+                agg["reviews"] += card.get("review_count", 0)
+                agg["curated"] += 1 if card.get("curated") else 0
+                agg["variants"] += stats.get("variant_count", 0)
+                agg["studies"] += stats.get("study_count", 0)
+                agg["genes"] += stats.get("gene_count", 0)
+            if not items or page * 100 >= body.get("total", 0):
+                break
+            page += 1
+        agg["namespaces"] = len(seen_namespaces)
+        return agg

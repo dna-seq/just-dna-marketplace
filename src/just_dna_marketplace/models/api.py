@@ -93,12 +93,14 @@ class WhoAmI(BaseModel):
     namespaces: list[str]
     type: str = "user"  # GitHub-style discriminator: `user` | `org`
     display_name: Optional[str] = None
+    avatar_url: Optional[str] = None  # userpic (public http(s) URL)
     email: Optional[str] = None
 
 
-# Account identity vocab + a light email check (kept regex-based to avoid an email-validator dep).
+# Account identity vocab + light checks (regex-based, to avoid an email-validator / URL dep).
 VALID_ACCOUNT_TYPES: frozenset[str] = frozenset({"user", "org"})
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+_HTTP_URL_RE = re.compile(r"^https?://\S+$")
 
 
 class ProfileUpdate(BaseModel):
@@ -107,6 +109,7 @@ class ProfileUpdate(BaseModel):
 
     email: Optional[str] = None
     display_name: Optional[str] = None
+    avatar_url: Optional[str] = None
 
     @field_validator("email")
     @classmethod
@@ -115,6 +118,15 @@ class ProfileUpdate(BaseModel):
             return v
         if not _EMAIL_RE.match(v):
             raise ValueError("email must look like name@host.tld")
+        return v
+
+    @field_validator("avatar_url")
+    @classmethod
+    def _validate_avatar_url(cls, v: Optional[str]) -> Optional[str]:
+        if v is None or v == "":  # "" clears the userpic
+            return v
+        if not _HTTP_URL_RE.match(v):
+            raise ValueError("avatar_url must be an http(s) URL")
         return v
 
 

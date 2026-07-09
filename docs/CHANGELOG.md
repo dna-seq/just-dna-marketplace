@@ -6,6 +6,30 @@ All notable changes to **just-dna-marketplace**. Format follows
 Full API: [API-REFERENCE.md](API-REFERENCE.md) · client: [CLIENT.md](CLIENT.md) · plan:
 [ROADMAP.md](ROADMAP.md).
 
+## [0.8.1] — 2026-07-09
+
+### Added
+- **Userpic.** Optional `avatar_url` on the account (public http(s) URL) — settable via
+  `PATCH /auth/whoami` and `issue-key --avatar-url`, returned by `whoami`. `""` clears it.
+- **`MarketplaceClient` now mirrors the full API** (was the webui-publishing blocker). New methods:
+  `whoami` / `update_profile`; `star` / `unstar`; `reviews` / `review` / `delete_review` /
+  `highlight_review`; `yank` / `unyank`; `members` / `add_member` / `remove_member`; `groups`; and
+  `catalog_stats(namespace=None, group=None)` — client-side aggregation of the card fields, since
+  there's no dedicated stats endpoint. Previously these were HTTP-only (raw `client._http`).
+- **Test infra:** `pytest-asyncio` (`asyncio_mode = "auto"`); the client SDK suite now drives the
+  real app in-process (no stubbed HTTP) via Starlette's ASGI transport, bridging the sync client
+  onto a worker thread.
+
+### Fixed
+- **Upgrade no longer re-upgrades a superseded version (immutability bug).** `marketplace upgrade`
+  re-publishes a drifted version's spec as a *new* PATCH, but the original is immutable and stays
+  drifted — so once `1.0.0` had produced `1.0.1`, every subsequent run minted another patch
+  (`1.0.2`, `1.0.3`, …) from the same un-upgraded `1.0.0`, and `revalidate` flagged `1.0.0`
+  `upgradable` forever. Now **only a module's latest non-yanked version is upgrade-eligible**: an
+  older version masked by a newer one is skipped by `upgrade` and reported as **`superseded`** (not
+  `upgradable`/`needs_upgrade`) by `revalidate` (`is_latest_version` in `services/upgrade.py`). A
+  future contract that drifts the *latest* still upgrades it once.
+
 ## [0.8.0] — 2026-07-09
 
 Listing groups + reviews/audits + account profiles — additive, marketplace-layer catalog features.
@@ -321,6 +345,7 @@ Initial marketplace service (internal builds; superseded by 0.2.0 packaging).
   `remove-module` / `remove-namespace` (purges DB rows + artifacts, frees the namespace; not yank).
 - `.env.template`, `docs/SPEC.md`, `docs/ROADMAP.md`.
 
+[0.8.1]: #081--2026-07-09
 [0.8.0]: #080--2026-07-09
 [0.7.1]: #071--2026-07-08
 [0.6.0]: #060--2026-07-08
