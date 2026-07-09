@@ -4,7 +4,7 @@ from typing import Callable
 
 from just_dna_format.manifest import ModuleManifest
 
-from just_dna_marketplace.db.repository import Repository
+from just_dna_registry.db.repository import Repository
 
 
 def test_remove_module_purges_db_and_storage(

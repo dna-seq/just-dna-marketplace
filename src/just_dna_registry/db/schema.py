@@ -87,7 +87,7 @@ CREATE TABLE IF NOT EXISTS namespace_members (
     PRIMARY KEY (namespace, account_id)
 );
 
--- Reviews/audits (0.8.0): marketplace-layer social data ABOUT a published version — never part of
+-- Reviews/audits (0.8.0): registry-layer social data ABOUT a published version — never part of
 -- the module manifest (that stays immutable/content-addressed). Anyone authenticated posts one per
 -- (version, account); a namespace owner may `highlighted` the good ones (SO accepted-answer style),
 -- which is what the `curated` listing group keys on. `verdict` is the optional audit tier.

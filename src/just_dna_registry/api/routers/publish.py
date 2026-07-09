@@ -14,7 +14,7 @@ from just_dna_format.identity import is_valid_version
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
-from just_dna_marketplace.api.deps import (
+from just_dna_registry.api.deps import (
     Account,
     get_repo,
     get_storage,
@@ -23,10 +23,10 @@ from just_dna_marketplace.api.deps import (
     require_account,
     require_namespace_member,
 )
-from just_dna_marketplace.config import Settings
-from just_dna_marketplace.db.repository import Repository
-from just_dna_marketplace.services import publish as publish_service
-from just_dna_marketplace.storage.base import StorageBackend
+from just_dna_registry.config import Settings
+from just_dna_registry.db.repository import Repository
+from just_dna_registry.services import publish as publish_service
+from just_dna_registry.storage.base import StorageBackend
 
 router = APIRouter(prefix="/modules", tags=["publish"])
 

@@ -1,10 +1,10 @@
-# Annotation Module Marketplace — Specification
+# Annotation Module Registry — Specification
 
 > **Status:** Design / reference specification.
-> **Audience:** Implementers of the standalone `just-dna-marketplace` service and of the
+> **Audience:** Implementers of the standalone `just-dna-registry` service and of the
 > `just-dna-pipelines` / `webui` integration.
 > **Purpose:** Seed document for a new repository. Self-contained; can be copied into
-> `just-dna-marketplace` as its founding `SPEC.md`.
+> `just-dna-registry` as its founding `SPEC.md`.
 
 ---
 
@@ -19,7 +19,7 @@ sources and hosts an AI module *creator*, but there is:
 - no way to **publish** a module so others can install it,
 - no **integrity guarantee** that a downloaded artifact matches its declared inputs.
 
-The goal is a **two-way marketplace**:
+The goal is a **two-way registry**:
 
 1. **Download / install** — browse, search, inspect stats, install. After install a module
    is immediately editable, usable for annotation, and exportable.
@@ -32,13 +32,13 @@ before installing.
 
 ### Key architectural decision
 
-**The marketplace is a standalone server-side service in its own repo
-(`just-dna-marketplace`), not part of the Reflex webui.** It needs object storage, a
+**The registry is a standalone server-side service in its own repo
+(`just-dna-registry`), not part of the Reflex webui.** It needs object storage, a
 metadata database, authentication, upload handling, and server-side validation/compilation
 — none of which belong in the client web app. The webui and the Dagster pipeline become
-*consumers* of the marketplace API.
+*consumers* of the registry API.
 
-The marketplace plugs into the existing `Source` discovery model as **just another source**,
+The registry plugs into the existing `Source` discovery model as **just another source**,
 so existing HuggingFace/local modules keep working with zero migration.
 
 ---
@@ -70,7 +70,7 @@ artifact**.
 a path for `weights.parquet` (required) plus optional `annotations.parquet`,
 `studies.parquet`, `logo.*`, and — importantly — **already probes for `metadata.json` /
 `metadata.yaml`** (`_probe_module_at_path`). Nothing currently *writes* that metadata file.
-**This is the seam the marketplace extends.**
+**This is the seam the registry extends.**
 
 The `Source` model (`module_config.py`) already supports HuggingFace (`org/repo`), local
 dirs, HTTP, S3/GCS (fsspec), and `github://`. Versioned layouts (`{name}/v{N}/`) are already
@@ -82,7 +82,7 @@ understood by discovery and are the live convention for compiled output.
 
 ```
 ┌─────────────────┐    browse / search / install / publish (HTTPS/JSON)  ┌──────────────────────────┐
-│  webui (Reflex) │ ─────────────────────────────────────────────────────▶│  just-dna-marketplace     │
+│  webui (Reflex) │ ─────────────────────────────────────────────────────▶│  just-dna-registry     │
 │  + Dagster      │◀──────────────── module manifest + artifacts ──────────│  (FastAPI, new repo)      │
 └─────────────────┘                                                        │  • catalog index (DB)     │
         │ install writes to CUSTOM_MODULES_DIR                              │  • auth / namespaces      │
@@ -130,7 +130,7 @@ for **every** compiled module (locally and on publish) and is the **source of tr
 service DB is just a queryable projection of it.
 
 Fields known at **compile time** are filled by `compile_module()`. Fields that are
-**marketplace-level** (namespace, version, owner, license, published_at, canonical_id) are
+**registry-level** (namespace, version, owner, license, published_at, canonical_id) are
 left null by the local compiler and filled by the service on publish.
 
 ```json
@@ -244,7 +244,7 @@ All hashes are SHA-256, lowercase hex, prefixed `sha256:`.
    reproducibility.
 6. Only then write the directory into `CUSTOM_MODULES_DIR` and `refresh_module_registry()`.
 
-**Signing (shipped in 0.5.0 / format 0.2.0, optional):** with `MARKETPLACE_SIGNING_KEY` set to an
+**Signing (shipped in 0.5.0 / format 0.2.0, optional):** with `REGISTRY_SIGNING_KEY` set to an
 Ed25519 private-key PEM, the server signs each version's `artifact.digest` and adds a `signature`
 block to the manifest; `GET /api/v1/pubkey` publishes the public key. A client that pins that key
 (`verify_manifest(public_key=...)`) can defend against a compromised storage backend. Unset →
@@ -301,7 +301,7 @@ unsigned, and verification behaves exactly as before.
 
 ## 8. Interface contract (REST)
 
-Base URL: `https://marketplace.dna-seq.org/api/v1`. All bodies JSON unless noted. List
+Base URL: `https://registry.dna-seq.org/api/v1`. All bodies JSON unless noted. List
 responses paginate with `?page`, `?per_page` (max 100) → `{items, total, page, per_page}`.
 
 ### 8.1 Endpoint table
@@ -447,7 +447,7 @@ include the path `{ns}`.
 
 ## 9. Storage & deployment shape
 
-Recommended MVP: a **FastAPI** service (new repo `just-dna-marketplace`) depending on
+Recommended MVP: a **FastAPI** service (new repo `just-dna-registry`) depending on
 `just-dna-pipelines` for `validate_spec` / `compile_module` / the manifest models.
 
 - **Metadata DB:** SQLite (single file) for MVP → Postgres for production. Tables:
@@ -473,7 +473,7 @@ service exists. Discovery already probes for `metadata.json` — this closes tha
 **A1 — `ModuleManifest` model.** Add to
 `just-dna-pipelines/src/just_dna_pipelines/module_compiler/models.py` a Pydantic
 `ModuleManifest` (with sub-models for `identity`, `display`, `stats`, `compilation`,
-`inputs[]`, `artifact`), matching §4. Marketplace-only fields (namespace, version, owner,
+`inputs[]`, `artifact`), matching §4. Registry-only fields (namespace, version, owner,
 license, published_at, canonical_id) are `Optional`, filled by the service on publish.
 
 **A2 — emit `manifest.json` from compilation.** In `compile_module()`
@@ -500,9 +500,9 @@ across the current catalog.
 
 ## 11. Consumer integration in `webui` (this repo)
 
-- **Discovery:** add a `marketplace://` branch in `discover_modules_from_source`
+- **Discovery:** add a `registry://` branch in `discover_modules_from_source`
   (`hf_modules.py`) that calls `GET /modules` + per-version manifest instead of walking a
-  filesystem; register the marketplace as one entry in `ModulesConfig.sources`
+  filesystem; register the registry as one entry in `ModulesConfig.sources`
   (`module_config.py`). Existing sources untouched.
 - **Install:** reuse the existing `register_custom_module` write-and-refresh path — installed
   modules are immediately editable / annotatable / exportable with no new code path.
@@ -515,23 +515,23 @@ across the current catalog.
 
 ## 12. Compatibility & migration
 
-**The marketplace is an additional `Source`, not a replacement** — lowest-risk path,
+**The registry is an additional `Source`, not a replacement** — lowest-risk path,
 minimal client change.
 
 - Existing HF/local/S3 sources keep working unchanged.
-- Because the marketplace uses HF Hub as backend, existing modules in
+- Because the registry uses HF Hub as backend, existing modules in
   `just-dna-seq/annotators` need **zero migration** — the same repo is both a legacy `Source`
-  and marketplace-indexed. The only additive step is generating a `manifest.json` per module
+  and registry-indexed. The only additive step is generating a `manifest.json` per module
   (the A5 backfill), which discovery consumes automatically.
 - Installs write to `CUSTOM_MODULES_DIR` exactly like `register_custom_module` today.
 - Never remove the generic `Source` mechanism; optionally deprecate ad-hoc HTTP/S3 sources in
-  favor of the marketplace later.
+  favor of the registry later.
 
 **Phasing:**
 1. Prerequisite work (§10) — additive, in `just-dna-pipelines`.
 2. Backfill manifests for existing HF modules.
-3. Stand up the FastAPI indexer + publish over HF backend (`just-dna-marketplace`).
-4. Add the `marketplace://` source branch + catalog page + install/publish UI in `webui`.
+3. Stand up the FastAPI indexer + publish over HF backend (`just-dna-registry`).
+4. Add the `registry://` source branch + catalog page + install/publish UI in `webui`.
 5. Later: optional Ed25519 signing.
 
 ---
@@ -557,7 +557,7 @@ minimal client change.
 **`just-dna-pipelines`:**
 - `src/just_dna_pipelines/module_compiler/compiler.py` — `compile_module`, `validate_spec`.
 - `src/just_dna_pipelines/module_compiler/models.py` — DSL models; add `ModuleManifest`.
-- `src/just_dna_pipelines/annotation/hf_modules.py` — discovery; probes `metadata.json`; add `marketplace://` branch.
+- `src/just_dna_pipelines/annotation/hf_modules.py` — discovery; probes `metadata.json`; add `registry://` branch.
 - `src/just_dna_pipelines/module_registry.py` — `register_custom_module` (install target); `_SPEC_SUFFIXES`.
 - `src/just_dna_pipelines/module_config.py` — `Source` / `ModulesConfig`.
 
@@ -568,5 +568,5 @@ minimal client change.
 - `src/webui/app.py` — page registration; `agent-spec-zip` export route.
 - `src/webui/state.py` — `module_metadata_list` computed var (catalog card shape).
 
-**New repo `just-dna-marketplace`** — FastAPI service; depends on `just-dna-pipelines` for
+**New repo `just-dna-registry`** — FastAPI service; depends on `just-dna-pipelines` for
 `validate_spec` / `compile_module` / `ModuleManifest`.

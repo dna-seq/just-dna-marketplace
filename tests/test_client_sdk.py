@@ -1,4 +1,4 @@
-"""MarketplaceClient SDK (0.8.1) — real, in-process coverage of the full REST surface it now wraps
+"""RegistryClient SDK (0.8.1) — real, in-process coverage of the full REST surface it now wraps
 (identity/profile, members, yank, stars, reviews, groups, aggregate stats).
 
 The SDK is synchronous (the CLI depends on that), and a sync httpx client can't drive an async
@@ -11,16 +11,16 @@ import asyncio
 import pytest
 from fastapi.testclient import TestClient
 
-from just_dna_marketplace.client import MarketplaceClient
+from just_dna_registry.client import RegistryClient
 
 _NS, _NAME, _VER = "just-dna-seq", "coronary", "1.0.0"
 
 
 @pytest.fixture
 def sdk(app, api_key):
-    """A real MarketplaceClient bound to the in-process app; token = the namespace-owner account."""
+    """A real RegistryClient bound to the in-process app; token = the namespace-owner account."""
     tc = TestClient(app)
-    client = MarketplaceClient(
+    client = RegistryClient(
         "http://testserver", token=api_key, transport=tc._transport, check_version=False
     )
     try:

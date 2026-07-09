@@ -1,10 +1,10 @@
 """Reviews / audits (0.9.0): open, version-scoped reviews (rating + optional audit verdict); the
 namespace owner highlights the good ones (SO accepted-answer style), which drives the `curated`
-group and the card's `curated` flag. Marketplace-layer only — the manifest is untouched."""
+group and the card's `curated` flag. Registry-layer only — the manifest is untouched."""
 
 from fastapi.testclient import TestClient
 
-from just_dna_marketplace.db.repository import Repository
+from just_dna_registry.db.repository import Repository
 
 _YAML = """\
 schema_version: "1.0"

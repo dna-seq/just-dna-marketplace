@@ -1,15 +1,15 @@
-# just-dna-marketplace — Client Reference
+# just-dna-registry — Client Reference
 
-The reference client is the **default install** of `just-dna-marketplace` — import it instead of
+The reference client is the **default install** of `just-dna-registry` — import it instead of
 re-implementing REST calls + integrity verification. It ships as a Python library
-(`MarketplaceClient`) and an equivalent CLI (`marketplace-client`). Wire protocol:
+(`RegistryClient`) and an equivalent CLI (`registry-client`). Wire protocol:
 [API-REFERENCE.md](API-REFERENCE.md).
 
 ## Install
 
 ```bash
-pip install just-dna-marketplace            # client only (httpx + just-dna-format)
-pip install just-dna-marketplace[server]    # + the server (FastAPI app, compiler, admin CLI)
+pip install just-dna-registry            # client only (httpx + just-dna-format)
+pip install just-dna-registry[server]    # + the server (FastAPI app, compiler, admin CLI)
 ```
 
 ## Configuration
@@ -19,17 +19,17 @@ them from flags, then environment, then a local `.env`:
 
 | Setting | Env var | CLI flag | Default |
 |---|---|---|---|
-| Base URL | `MARKETPLACE_URL` | `--url` | `http://127.0.0.1:8000` |
-| API key | `MARKETPLACE_TOKEN` | `--token` | — (required for publish/import/update) |
+| Base URL | `REGISTRY_URL` | `--url` | `http://127.0.0.1:8000` |
+| API key | `REGISTRY_TOKEN` | `--token` | — (required for publish/import/update) |
 
 ```bash
-export MARKETPLACE_URL=https://module-marketplace.just-dna.life
-export MARKETPLACE_TOKEN=mk_live_…
+export REGISTRY_URL=https://module-registry.just-dna.life
+export REGISTRY_TOKEN=mk_live_…
 ```
 
 ## Python ↔ CLI at a glance
 
-| Capability | `MarketplaceClient` method | `marketplace-client` command | Auth |
+| Capability | `RegistryClient` method | `registry-client` command | Auth |
 |---|---|---|---|
 | List / search | `list_modules(**filters)` | `list` | — |
 | Module detail | `get_module(ns, name)` | *(use the API / `download`)* | — |
@@ -50,18 +50,18 @@ export MARKETPLACE_TOKEN=mk_live_…
 
 ---
 
-## Python: `MarketplaceClient`
+## Python: `RegistryClient`
 
 ```python
-from just_dna_marketplace import MarketplaceClient, MarketplaceError
+from just_dna_registry import RegistryClient, RegistryError
 
-with MarketplaceClient("https://module-marketplace.just-dna.life", token="mk_live_…") as mkt:
+with RegistryClient("https://module-registry.just-dna.life", token="mk_live_…") as mkt:
     ...
 ```
 
-**`MarketplaceClient(base_url, token=None, timeout=120.0, transport=None)`** — a context manager
+**`RegistryClient(base_url, token=None, timeout=120.0, transport=None)`** — a context manager
 (closes the underlying `httpx.Client`). `transport` is for tests (e.g. an ASGI transport).
-Non-2xx responses raise **`MarketplaceError(status_code, detail)`**.
+Non-2xx responses raise **`RegistryError(status_code, detail)`**.
 
 ### Reads (no token)
 
@@ -82,10 +82,10 @@ Non-2xx responses raise **`MarketplaceError(status_code, detail)`**.
 
 - **`register(install_id, account) -> dict`** — `{token, account, namespaces}` from a proof-of-work
   install-id (no auth; mints the key). Grind an id with `generate_install_id()` (also exported at
-  top level: `from just_dna_marketplace import generate_install_id`).
+  top level: `from just_dna_registry import generate_install_id`).
 - **`namespace_available(namespace) -> dict`** — `{namespace, valid, available}`.
 - **`claim_namespace(namespace) -> dict`** *(token)* — claims it for your account
-  (`{namespace, owner, already_owned}`); raises `MarketplaceError` `409`/`403` if taken/over-limit.
+  (`{namespace, owner, already_owned}`); raises `RegistryError` `409`/`403` if taken/over-limit.
 - **`download(namespace, name, version, dest, *, include_logs=True) -> ModuleManifest`** — fetches
   the artifact files (and logs), writes `manifest.json`, and **verifies integrity** with
   `verify_manifest` (raises `IntegrityError` on mismatch). Returns the manifest.
@@ -137,9 +137,9 @@ Non-2xx responses raise **`MarketplaceError(status_code, detail)`**.
 ### Example
 
 ```python
-from just_dna_marketplace import MarketplaceClient, MarketplaceError
+from just_dna_registry import RegistryClient, RegistryError
 
-with MarketplaceClient(url, token) as mkt:
+with RegistryClient(url, token) as mkt:
     m = mkt.import_module("just-dna-seq", "coronary", "1.0.0", "coronary_v1.zip")
     print(m.artifact.digest)
 
@@ -150,52 +150,52 @@ with MarketplaceClient(url, token) as mkt:
 
     try:
         mkt.publish("just-dna-seq", "coronary", "1.0.0", "./spec")   # same version again
-    except MarketplaceError as e:
+    except RegistryError as e:
         assert e.status_code == 409  # version_exists
 ```
 
 ---
 
-## CLI: `marketplace-client`
+## CLI: `registry-client`
 
-All commands accept `--url` (or `$MARKETPLACE_URL`); write commands accept `--token`
-(or `$MARKETPLACE_TOKEN`).
+All commands accept `--url` (or `$REGISTRY_URL`); write commands accept `--token`
+(or `$REGISTRY_TOKEN`).
 
 ### `list`
 ```bash
-marketplace-client list [--q TEXT] [--gene GENE] [--category CAT] [--sort name|downloads|recent]
+registry-client list [--q TEXT] [--gene GENE] [--category CAT] [--sort name|downloads|recent]
 ```
 Prints one line per module (`ns/name@latest [N variants, M genes] ↓downloads — title`).
 
 ### `download`
 ```bash
-marketplace-client download NS NAME VERSION DEST          # extract + integrity-verify into DEST/
-marketplace-client download NS NAME VERSION FILE.tar.gz --tarball   # save a single tar.gz
+registry-client download NS NAME VERSION DEST          # extract + integrity-verify into DEST/
+registry-client download NS NAME VERSION FILE.tar.gz --tarball   # save a single tar.gz
 ```
 
 ### `register`
 ```bash
-marketplace-client register ACCOUNT [--install-id jdi1_…] [--difficulty 20]
+registry-client register ACCOUNT [--install-id jdi1_…] [--difficulty 20]
 ```
 Grinds an install-id (unless `--install-id` given), self-registers, and prints the account,
-install-id, and API key. Save both; put the key in `MARKETPLACE_TOKEN`.
+install-id, and API key. Save both; put the key in `REGISTRY_TOKEN`.
 
 ### `namespace-available` / `claim-namespace`
 ```bash
-marketplace-client namespace-available alice-mods
-marketplace-client claim-namespace alice-mods        # (token)
+registry-client namespace-available alice-mods
+registry-client claim-namespace alice-mods        # (token)
 ```
 
 ### `find-by-hash`
 ```bash
-marketplace-client find-by-hash sha256:…                  # by digest
-marketplace-client find-by-hash --manifest ./mod/manifest.json    # read digest from a local manifest
+registry-client find-by-hash sha256:…                  # by digest
+registry-client find-by-hash --manifest ./mod/manifest.json    # read digest from a local manifest
 ```
 Exit code `1` (and "not published") if there are no matches.
 
 ### `publish`  *(token)*
 ```bash
-marketplace-client publish NS NAME VERSION SPEC_DIR [--changelog "…"]
+registry-client publish NS NAME VERSION SPEC_DIR [--changelog "…"]
 ```
 Uploads a spec directory (must contain `module_spec.yaml` + `variants.csv` + `studies.csv`). On
 success it **stamps** the returned manifest into `SPEC_DIR/manifest.json`, so the local module is
@@ -203,33 +203,43 @@ afterwards discernible as published-by-you (identity + `published_at`).
 
 ### `import-module`  *(token)*
 ```bash
-marketplace-client import-module NS NAME VERSION ARCHIVE.zip \
+registry-client import-module NS NAME VERSION ARCHIVE.zip \
     [--changelog "…"] [--title …] [--description …] [--report-title …] [--icon …] [--color …]
 ```
 Publishes from a zip/tar.gz. Display flags apply only to legacy parquet-only archives.
 
 ### `update-module-version`  *(token)*
 ```bash
-marketplace-client update-module-version NS NAME VERSION SPEC_DIR [--changelog "…"]
+registry-client update-module-version NS NAME VERSION SPEC_DIR [--changelog "…"]
 ```
 Fetches the module's current latest, checks `VERSION` supersedes it (SemVer), and publishes. Errors
 if the module doesn't exist yet (use `publish`) or `VERSION` isn't greater than latest.
 
 ---
 
-## Server admin CLI (`marketplace`, needs `[server]`)
+## Server admin CLI (`registry`, needs `[server]`)
 
 Not part of the client surface, but for completeness — run **on the server**, against its DB/storage:
 
 ```bash
-marketplace serve --host 0.0.0.0 --port 8000
-marketplace init-db
-marketplace issue-key <account> -n <namespace>          # mint an API key
-marketplace revoke-key <key>                            # invalidate a leaked key
-marketplace revoke-account <account> [--yes]            # invalidate all of an account's keys
-marketplace feature <ns> / unfeature <ns>               # curate: float a namespace to the top
-marketplace blacklist <ns> / unblacklist <ns>           # moderate: hide from default listings
-marketplace remove-version <ns> <name> <v> [--yes]      # hard-delete ONE version (not yank)
-marketplace remove-module <ns> <name> [--yes]           # hard-delete a whole module (all versions)
-marketplace remove-namespace <ns> [--yes]               # purge + free the namespace
+registry serve --host 0.0.0.0 --port 8000
+registry init-db
+registry issue-key <account> -n <namespace>          # mint an API key
+registry revoke-key <key>                            # invalidate a leaked key
+registry revoke-account <account> [--yes]            # invalidate all of an account's keys
+registry feature <ns> / unfeature <ns>               # curate: float a namespace to the top
+registry blacklist <ns> / unblacklist <ns>           # moderate: hide from default listings
+registry remove-version <ns> <name> <v> [--yes]      # hard-delete ONE version (not yank)
+registry remove-module <ns> <name> [--yes]           # hard-delete a whole module (all versions)
+registry remove-namespace <ns> [--yes]               # purge + free the namespace
+registry issue-key <acct> --email … --display-name … --avatar-url … --type user|org
+registry export-keys [-o auth.json]                  # dump accounts + API keys + namespaces (SECRET)
+registry import-keys auth.json                       # restore the auth graph (idempotent)
+registry reset-db [--keep-keys|--wipe-keys]          # wipe catalog; keeps keys by default; types RESET
 ```
+
+`export-keys`/`import-keys` move the **auth graph** (accounts, API keys, namespaces, memberships)
+between DBs/environments; the export contains live tokens, so protect it. `reset-db` clears the
+catalog projection for a fresh start while keeping your keys (so you don't lock yourself out); it
+requires typing `RESET` and does not touch artifact storage. The **signing key** is a PEM file
+(`REGISTRY_SIGNING_KEY`), never in the DB — copy it directly to reuse across environments.

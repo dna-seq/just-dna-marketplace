@@ -9,7 +9,7 @@ from typing import Optional
 
 import jwt
 
-from just_dna_marketplace.config import Settings
+from just_dna_registry.config import Settings
 
 _ALGO = "HS256"
 

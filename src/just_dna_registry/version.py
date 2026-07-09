@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field
 # server that disagree on the wire contract fail fast instead of hitting a 404 maze.
 API_VERSION: str = "v1"
 
-_MARKETPLACE_PKG = "just-dna-marketplace"
+_REGISTRY_PKG = "just-dna-registry"
 _FORMAT_PKG = "just-dna-format"
 _COMPILER_PKG = "just-dna-compiler"
 
@@ -38,10 +38,10 @@ def _installed(pkg: str) -> Optional[str]:
 
 class VersionInfo(BaseModel):
     """The versions one side of the wire runs. Exchanged via `GET /api/v1/version`, the
-    `X-Marketplace-Version` / `X-Format-Version` response headers, and the client's request headers."""
+    `X-Registry-Version` / `X-Format-Version` response headers, and the client's request headers."""
 
     api: str = Field(default=API_VERSION, description="REST API contract version (path `v1`)")
-    marketplace: str = Field(description="just-dna-marketplace package version")
+    registry: str = Field(description="just-dna-registry package version")
     format: Optional[str] = Field(default=None, description="just-dna-format contract version")
     compiler: Optional[str] = Field(
         default=None, description="just-dna-compiler version (server tier only; None on a client)"
@@ -52,7 +52,7 @@ class VersionInfo(BaseModel):
         """The running process's own versions, read from installed package metadata."""
         return cls(
             api=API_VERSION,
-            marketplace=_installed(_MARKETPLACE_PKG) or "0.0.0+unknown",
+            registry=_installed(_REGISTRY_PKG) or "0.0.0+unknown",
             format=_installed(_FORMAT_PKG),
             compiler=_installed(_COMPILER_PKG),
         )
@@ -81,7 +81,7 @@ def compatibility_error(server: VersionInfo, client: VersionInfo) -> Optional[st
     """A human, actionable message if `server` and `client` are contract-incompatible, else None.
 
     Only genuine wire/artifact breakers are fatal (API version; `just-dna-format` contract). A
-    differing marketplace *app* version is not fatal — the API is path-versioned — so it is not
+    differing registry *app* version is not fatal — the API is path-versioned — so it is not
     reported here; use `VersionInfo` directly if you want to surface it as a note."""
     if server.api != client.api:
         return (

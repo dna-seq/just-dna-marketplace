@@ -2,7 +2,7 @@
 Named namespace groups behind the webui's listing tabs (all / featured / popular / new / test).
 
 The *membership policy* lives here on the server — not in a consumer — so the webui, the
-`marketplace-client` CLI, and any other client agree on what each tab contains. In particular, which
+`registry-client` CLI, and any other client agree on what each tab contains. In particular, which
 namespaces count as **test/sandbox** is a server-config regex (`Settings.test_namespace_pattern`),
 and those spaces are hidden from every tab except `test`. Rendering the tabs is the frontend's job;
 defining what falls in them is not.
@@ -16,7 +16,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from just_dna_marketplace.db.repository import Repository
+from just_dna_registry.db.repository import Repository
 
 
 class GroupInfo(BaseModel):

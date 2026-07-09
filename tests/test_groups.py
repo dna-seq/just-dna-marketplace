@@ -4,7 +4,7 @@ test/sandbox namespaces (a config regex) are isolated to the `test` tab and hidd
 
 from fastapi.testclient import TestClient
 
-from just_dna_marketplace.db.repository import Repository
+from just_dna_registry.db.repository import Repository
 
 
 def _seed_catalog(seed) -> None:

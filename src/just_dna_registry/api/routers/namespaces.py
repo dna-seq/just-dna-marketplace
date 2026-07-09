@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from just_dna_format.identity import is_valid_namespace
 from pydantic import BaseModel
 
-from just_dna_marketplace.api.deps import (
+from just_dna_registry.api.deps import (
     Account,
     get_repo,
     require_account,
@@ -14,9 +14,9 @@ from just_dna_marketplace.api.deps import (
     require_namespace_owner,
     settings_dep,
 )
-from just_dna_marketplace.config import Settings
-from just_dna_marketplace.db.repository import Repository
-from just_dna_marketplace.models.api import AddMemberRequest, MemberEntry, MemberList
+from just_dna_registry.config import Settings
+from just_dna_registry.db.repository import Repository
+from just_dna_registry.models.api import AddMemberRequest, MemberEntry, MemberList
 
 router = APIRouter(prefix="/namespaces", tags=["namespaces"])
 

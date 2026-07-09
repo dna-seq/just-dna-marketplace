@@ -5,7 +5,7 @@ from typing import Callable
 from fastapi.testclient import TestClient
 from just_dna_format.manifest import ModuleManifest
 
-from just_dna_marketplace.db.repository import Repository
+from just_dna_registry.db.repository import Repository
 
 
 def _names(body: dict) -> set[str]:

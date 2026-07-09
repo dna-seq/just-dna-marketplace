@@ -7,9 +7,9 @@ backend is selected.
 import logging
 import sys
 
-from just_dna_marketplace.config import Settings
+from just_dna_registry.config import Settings
 
-logger = logging.getLogger("marketplace.startup")
+logger = logging.getLogger("registry.startup")
 
 
 def validate_hf_access(settings: Settings) -> None:
@@ -25,7 +25,7 @@ def validate_hf_access(settings: Settings) -> None:
 
     if not settings.hf_token:
         logger.error(
-            "storage_backend=hf but no HF token — set HF_TOKEN (or MARKETPLACE_HF_TOKEN)."
+            "storage_backend=hf but no HF token — set HF_TOKEN (or REGISTRY_HF_TOKEN)."
         )
         sys.exit(1)
 

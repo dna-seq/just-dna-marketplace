@@ -4,9 +4,9 @@ sets a non-destructive `needs_upgrade` flag, and never touches the immutable art
 from fastapi.testclient import TestClient
 from just_dna_format.manifest import ModuleManifest
 
-from just_dna_marketplace.db.repository import Repository
-from just_dna_marketplace.services.revalidate import gather_pmids, revalidate_version
-from just_dna_marketplace.storage.base import version_key
+from just_dna_registry.db.repository import Repository
+from just_dna_registry.services.revalidate import gather_pmids, revalidate_version
+from just_dna_registry.storage.base import version_key
 
 _YAML = """\
 schema_version: "1.0"

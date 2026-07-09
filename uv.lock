@@ -403,8 +403,8 @@ wheels = [
 ]
 
 [[package]]
-name = "just-dna-marketplace"
-version = "0.8.1"
+name = "just-dna-registry"
+version = "0.9.0"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
@@ -428,7 +428,7 @@ server = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "just-dna-marketplace", extra = ["server"] },
+    { name = "just-dna-registry", extra = ["server"] },
     { name = "pytest" },
     { name = "pytest-asyncio" },
 ]
@@ -453,7 +453,7 @@ provides-extras = ["server"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "just-dna-marketplace", extras = ["server"] },
+    { name = "just-dna-registry", extras = ["server"] },
     { name = "pytest", specifier = ">=9.0.3" },
     { name = "pytest-asyncio", specifier = ">=1.4.0" },
 ]

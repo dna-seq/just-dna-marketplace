@@ -1,13 +1,13 @@
-"""Debug-logging configuration + request tracing (behind MARKETPLACE_DEBUG)."""
+"""Debug-logging configuration + request tracing (behind REGISTRY_DEBUG)."""
 
 import logging
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from just_dna_marketplace.api.app import create_app
-from just_dna_marketplace.config import Settings
-from just_dna_marketplace.logging_setup import configure_logging
+from just_dna_registry.api.app import create_app
+from just_dna_registry.config import Settings
+from just_dna_registry.logging_setup import configure_logging
 
 
 def test_debug_sets_root_to_debug() -> None:

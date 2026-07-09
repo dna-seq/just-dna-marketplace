@@ -1,6 +1,6 @@
 # Contract upgrades & the stale-module procedure
 
-`just-dna-marketplace` pins a `just-dna-format` / `just-dna-compiler` contract version. Bumping it
+`just-dna-registry` pins a `just-dna-format` / `just-dna-compiler` contract version. Bumping it
 can tighten a validator (the archetype: `StudyRow.pmid` gaining a `PMID_PATTERN` rule in 0.2.0).
 This doc is the agreed procedure for such events, so a contract bump can never silently strand
 published modules.
@@ -24,7 +24,7 @@ truth** — knowing which published modules would fail *today's* contract.
 1. **Prefer additive, verbatim-preserving changes.** 0.2.0's PMID rule keeps the original string and
    only rejects references with no PMID token at all (e.g. a bare dbSNP URL, which grounds zero
    studies anyway). Audited against the Gen-I corpus → nothing published was invalidated.
-2. **Audit with `marketplace revalidate`.** It re-runs the *current* `validate_spec` over every
+2. **Audit with `registry revalidate`.** It re-runs the *current* `validate_spec` over every
    published version's stored spec inputs and reports `ok` / `upgradable` / `needs_upgrade` /
    `skipped` (spec inputs not retrievable). Published artifacts are never touched.
    - `needs_upgrade` — the spec no longer **validates** (a tightened rule, e.g. the 0.2 PMID pattern).
@@ -34,10 +34,10 @@ truth** — knowing which published modules would fail *today's* contract.
    - `--set-flag` persists a non-destructive `needs_upgrade` flag on both (surfaced in the versions
      API as `needs_upgrade: true`). The version stays fetchable and keeps verifying.
    - `--check-pmids` additionally verifies each study PMID resolves at NCBI E-utilities (the online
-     "curl validator"). This is a **marketplace ops** call — the contract libs stay strictly offline;
+     "curl validator"). This is a **registry ops** call — the contract libs stay strictly offline;
      `just-dna-format` only does the cheap regex (`extract_pmids`).
 3. **Upgrade a flagged version** by re-publishing, never mutating old bytes:
-   - **Additive-column upgrades (0.3) are automated: `marketplace upgrade`.** It applies the format's
+   - **Additive-column upgrades (0.3) are automated: `registry upgrade`.** It applies the format's
      own `VariantRow.upgraded()` derivation to the stored `variants.csv` (back-populate
      `direction`/`stat_significance`/`clin_sig`, trim `state` to its derived legacy mirror), then
      re-publishes as the next PATCH through the normal server-side compile path. Dry-run by default;
@@ -47,7 +47,7 @@ truth** — knowing which published modules would fail *today's* contract.
      Idempotent: once the latest is on-contract, re-running does nothing (no endless patch chain).
    - **Validator-failure upgrades** stay a manual transform + publish: apply the fix to the spec
      inputs (for PMID: `extract_pmids` → digit-only; drop or fix references that don't resolve
-     online), then `marketplace-client publish … <new PATCH version>` under the new contract.
+     online), then `registry-client publish … <new PATCH version>` under the new contract.
    - Either way the predecessor stays fetchable (existing installs keep working); yank it once the
      successor is live if you want it out of `latest`/listings.
 4. **Out-of-digest assets never trigger this.** `logs`, `provenance`, and `logo` are hashed but
@@ -59,5 +59,5 @@ The contract libraries (`just-dna-format`, `just-dna-compiler`) are a stated no-
 
 - **Regex validation** (does the string carry a PMID token?) → `just-dna-format` (`PMID_PATTERN` /
   `extract_pmids`).
-- **Existence verification** (does the PMID resolve at NCBI?) → marketplace ops
+- **Existence verification** (does the PMID resolve at NCBI?) → registry ops
   (`services/pmid_check.verify_pmids`, reached via `revalidate --check-pmids`) or the authoring tier.

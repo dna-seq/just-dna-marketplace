@@ -4,8 +4,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from just_dna_marketplace.api.app import create_app
-from just_dna_marketplace.config import Settings
+from just_dna_registry.api.app import create_app
+from just_dna_registry.config import Settings
 
 
 def _app(tmp_path: Path, **over):

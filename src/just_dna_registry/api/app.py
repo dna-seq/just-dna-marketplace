@@ -13,26 +13,26 @@ from typing import Optional
 from fastapi import FastAPI, HTTPException, Request, status
 from just_dna_format.signing import public_key_b64_from_pem
 
-from just_dna_marketplace import __version__
-from just_dna_marketplace.api.routers import auth, modules, namespaces, publish, reviews
-from just_dna_marketplace.config import API_PREFIX, Settings, get_settings
-from just_dna_marketplace.version import VersionInfo
-from just_dna_marketplace.db.repository import Repository
-from just_dna_marketplace.db.schema import connect, init_db
-from just_dna_marketplace.logging_setup import configure_logging
-from just_dna_marketplace.ratelimit import default_limiter
-from just_dna_marketplace.startup import validate_hf_access
-from just_dna_marketplace.storage.base import StorageBackend
-from just_dna_marketplace.storage.local import LocalStorage
+from just_dna_registry import __version__
+from just_dna_registry.api.routers import auth, modules, namespaces, publish, reviews
+from just_dna_registry.config import API_PREFIX, Settings, get_settings
+from just_dna_registry.version import VersionInfo
+from just_dna_registry.db.repository import Repository
+from just_dna_registry.db.schema import connect, init_db
+from just_dna_registry.logging_setup import configure_logging
+from just_dna_registry.ratelimit import default_limiter
+from just_dna_registry.startup import validate_hf_access
+from just_dna_registry.storage.base import StorageBackend
+from just_dna_registry.storage.local import LocalStorage
 
-_request_log = logging.getLogger("marketplace.request")
+_request_log = logging.getLogger("registry.request")
 
 
 def _build_storage(settings: Settings) -> StorageBackend:
     if settings.storage_backend == "local":
         return LocalStorage(settings.local_storage_dir)
     if settings.storage_backend == "hf":
-        from just_dna_marketplace.storage.hf import HfStorage  # imports huggingface_hub lazily
+        from just_dna_registry.storage.hf import HfStorage  # imports huggingface_hub lazily
 
         return HfStorage(settings.hf_repo_id, token=settings.hf_token)
     raise ValueError(f"unsupported storage_backend {settings.storage_backend!r} (use 'local' or 'hf')")
@@ -42,7 +42,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     settings = settings or get_settings()
     configure_logging(settings)
     validate_hf_access(settings)  # exits(1) if hf backend + missing/read-only token; no-op for local
-    app = FastAPI(title="just-dna-marketplace", version=__version__)
+    app = FastAPI(title="just-dna-registry", version=__version__)
 
     conn = connect(settings.db_path)
     init_db(conn)
@@ -65,7 +65,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
                 "unhandled error: %s %s", request.method, request.url.path
             )
             raise
-        response.headers["X-Marketplace-Version"] = server_versions.marketplace
+        response.headers["X-Registry-Version"] = server_versions.registry
         response.headers["X-Format-Version"] = server_versions.format or ""
         response.headers["X-API-Version"] = server_versions.api
         duration_ms = (time.perf_counter() - start) * 1000

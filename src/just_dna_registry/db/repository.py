@@ -220,6 +220,67 @@ class Repository:
             "SELECT id, name FROM modules WHERE namespace = ? ORDER BY name", (namespace,)
         ).fetchall()
 
+    # ── Ops: auth export/import + catalog reset ─────────────────────────────────
+
+    def export_auth(self) -> dict[str, list[dict]]:
+        """Serialize the auth graph — accounts (+ profile), API keys, namespaces, memberships — for
+        backup or preprod→prod migration. Account ids are preserved so the FKs line up on import.
+        NB: `api_keys.key` values are the live plaintext tokens — treat the export as a secret."""
+        def rows(sql: str) -> list[dict]:
+            return [dict(r) for r in self.conn.execute(sql).fetchall()]
+
+        return {
+            "accounts": rows(
+                "SELECT id, name, email, display_name, avatar_url, type, install_id FROM accounts"
+            ),
+            "api_keys": rows("SELECT key, account_id FROM api_keys"),
+            "namespaces": rows("SELECT name, account_id, featured, blacklisted FROM namespaces"),
+            "members": rows("SELECT namespace, account_id, role FROM namespace_members"),
+        }
+
+    def import_auth(self, data: dict[str, list[dict]]) -> dict[str, int]:
+        """Restore an `export_auth()` payload (idempotent upsert; preserves account ids). Returns
+        per-table counts. Existing rows with the same id/key are overwritten (accounts/namespaces)
+        or ignored (keys/members)."""
+        for a in data.get("accounts", []):
+            self.conn.execute(
+                "INSERT OR REPLACE INTO accounts(id, name, email, display_name, avatar_url, type, "
+                "install_id) VALUES (:id, :name, :email, :display_name, :avatar_url, "
+                ":type, :install_id)",
+                a,
+            )
+        for k in data.get("api_keys", []):
+            self.conn.execute(
+                "INSERT OR IGNORE INTO api_keys(key, account_id) VALUES (:key, :account_id)", k
+            )
+        for n in data.get("namespaces", []):
+            self.conn.execute(
+                "INSERT OR REPLACE INTO namespaces(name, account_id, featured, blacklisted) "
+                "VALUES (:name, :account_id, :featured, :blacklisted)",
+                n,
+            )
+        for m in data.get("members", []):
+            self.conn.execute(
+                "INSERT OR IGNORE INTO namespace_members(namespace, account_id, role) "
+                "VALUES (:namespace, :account_id, :role)",
+                m,
+            )
+        self.conn.commit()
+        return {key: len(data.get(key, [])) for key in ("accounts", "api_keys", "namespaces", "members")}
+
+    def reset_catalog(self, *, keep_auth: bool = True) -> None:
+        """Wipe the catalog projection (modules/versions/facets/stars/reviews). The auth graph
+        (accounts/api_keys/namespaces/members) is kept unless `keep_auth=False`. Does NOT touch
+        artifact storage — clear the bucket/HF repo separately if a full reset is wanted."""
+        catalog = ("reviews", "module_stars", "version_genes", "version_categories",
+                   "versions", "modules")  # child → parent (FK-safe)
+        for table in catalog:
+            self.conn.execute(f"DELETE FROM {table}")
+        if not keep_auth:
+            for table in ("namespace_members", "api_keys", "namespaces", "accounts"):
+                self.conn.execute(f"DELETE FROM {table}")
+        self.conn.commit()
+
     def distinct_module_namespaces(self) -> list[str]:
         """Every namespace that has at least one published module. The source for classifying which
         namespaces are 'test/sandbox' when scoping the listing groups (works even for a namespace

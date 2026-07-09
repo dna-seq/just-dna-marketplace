@@ -1,7 +1,7 @@
 [project]
-name = "just-dna-marketplace"
-version = "0.8.1"
-description = "Reference client (and optional server) for the just-dna annotation module marketplace"
+name = "just-dna-registry"
+version = "0.9.0"
+description = "Reference client (and optional server) for the just-dna annotation module registry"
 readme = "README.md"
 requires-python = ">=3.13"
 # Default install = the reference client only (lightweight). The server is the `server` extra.
@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Everything needed to RUN the marketplace: FastAPI app, server-side recompile, storage, admin CLI.
+# Everything needed to RUN the registry: FastAPI app, server-side recompile, storage, admin CLI.
 server = [
     "fastapi>=0.139.0",
     "uvicorn>=0.34.0",
@@ -38,12 +38,12 @@ wheel-exclude = [".env", ".env.*", "*.swp", "*.swo", "*.swn", ".*.swp"]
 
 [project.scripts]
 # Client CLI works on the default install; the server admin CLI needs the `server` extra.
-marketplace-client = "just_dna_marketplace.client_cli:app"
-marketplace = "just_dna_marketplace.cli:app"
+registry-client = "just_dna_registry.client_cli:app"
+registry = "just_dna_registry.cli:app"
 
 [dependency-groups]
 dev = [
-    "just-dna-marketplace[server]",
+    "just-dna-registry[server]",
     "pytest>=9.0.3",
     "pytest-asyncio>=1.4.0",
 ]

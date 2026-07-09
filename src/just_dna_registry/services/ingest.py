@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 
 from just_dna_format.manifest import ModuleManifest
 
-from just_dna_marketplace.db.repository import Repository
+from just_dna_registry.db.repository import Repository
 
 
 def now_iso() -> str:

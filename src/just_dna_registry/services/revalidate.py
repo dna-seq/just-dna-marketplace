@@ -16,8 +16,8 @@ from just_dna_compiler.compiler import validate_spec
 from just_dna_format.manifest import ModuleManifest
 from just_dna_format.spec import extract_pmids
 
-from just_dna_marketplace.services.upgrade import plan_variants_upgrade
-from just_dna_marketplace.storage.base import StorageBackend, version_key
+from just_dna_registry.services.upgrade import plan_variants_upgrade
+from just_dna_registry.storage.base import StorageBackend, version_key
 
 # The spec inputs `validate_spec` needs; other inputs (MODULE.md, logo) are irrelevant to it.
 _SPEC_INPUTS: tuple[str, ...] = ("module_spec.yaml", "variants.csv", "studies.csv")
@@ -33,7 +33,7 @@ def revalidate_version(
         rule, e.g. the 0.2 PMID pattern). Re-publish is required.
       * `"upgradable"` — the spec still validates, but one or more variant rows can be losslessly
         back-populated to the additive 0.3 columns (direction/stat_significance/clin_sig) from the
-        legacy `state`/booleans. Re-publish is optional-but-recommended; run `marketplace upgrade`.
+        legacy `state`/booleans. Re-publish is optional-but-recommended; run `registry upgrade`.
       * `"ok"` — validates and already carries the current columns.
       * `"skipped"` — spec inputs aren't retrievable (e.g. a legacy import that shipped no inputs;
         not counted as a failure).
@@ -59,7 +59,7 @@ def revalidate_version(
     if plan.needed:
         return "upgradable", [
             f"{plan.upgradable_rows}/{plan.total_rows} variant row(s) can be back-populated to the "
-            f"0.3 columns (direction/stat_significance/clin_sig) — run `marketplace upgrade`"
+            f"0.3 columns (direction/stat_significance/clin_sig) — run `registry upgrade`"
         ]
     return "ok", []
 

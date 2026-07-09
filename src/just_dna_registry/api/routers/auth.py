@@ -8,17 +8,17 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from just_dna_format.identity import is_valid_namespace
 from pydantic import BaseModel
 
-from just_dna_marketplace.api.deps import (
+from just_dna_registry.api.deps import (
     Account,
     get_repo,
     require_account,
     settings_dep,
 )
-from just_dna_marketplace.config import Settings
-from just_dna_marketplace.db.repository import Repository
-from just_dna_marketplace.installid import validate_install_id
-from just_dna_marketplace.jwtauth import issue_jwt, jwt_enabled
-from just_dna_marketplace.models.api import ProfileUpdate, WhoAmI
+from just_dna_registry.config import Settings
+from just_dna_registry.db.repository import Repository
+from just_dna_registry.installid import validate_install_id
+from just_dna_registry.jwtauth import issue_jwt, jwt_enabled
+from just_dna_registry.models.api import ProfileUpdate, WhoAmI
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 

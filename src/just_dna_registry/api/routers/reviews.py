@@ -1,5 +1,5 @@
 """
-Reviews / audits (0.8.0) — marketplace-layer social data about a published version, never part of
+Reviews / audits (0.8.0) — registry-layer social data about a published version, never part of
 the immutable module manifest.
 
 Anyone authenticated posts one review per version (a 1-5 rating + optional audit verdict + notes);
@@ -12,7 +12,7 @@ from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from just_dna_marketplace.api.deps import (
+from just_dna_registry.api.deps import (
     Account,
     get_repo,
     optional_account,
@@ -20,9 +20,9 @@ from just_dna_marketplace.api.deps import (
     require_account,
     require_namespace_owner,
 )
-from just_dna_marketplace.db.repository import Repository
-from just_dna_marketplace.models.api import Review, ReviewRequest
-from just_dna_marketplace.services.ingest import now_iso
+from just_dna_registry.db.repository import Repository
+from just_dna_registry.models.api import Review, ReviewRequest
+from just_dna_registry.services.ingest import now_iso
 
 router = APIRouter(prefix="/modules", tags=["reviews"])
 

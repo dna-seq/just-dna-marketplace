@@ -18,11 +18,11 @@ from just_dna_format.manifest import (
 )
 from just_dna_format.integrity import sha256_bytes
 
-from just_dna_marketplace.api.app import create_app
-from just_dna_marketplace.config import Settings
-from just_dna_marketplace.db.repository import Repository
-from just_dna_marketplace.services.ingest import ingest_manifest
-from just_dna_marketplace.storage.base import version_key
+from just_dna_registry.api.app import create_app
+from just_dna_registry.config import Settings
+from just_dna_registry.db.repository import Repository
+from just_dna_registry.services.ingest import ingest_manifest
+from just_dna_registry.storage.base import version_key
 
 # One shared artifact payload; content differs per module so digests differ.
 _ARTIFACT_FILES = ("weights.parquet", "annotations.parquet", "studies.parquet")
@@ -77,7 +77,7 @@ def _make_manifest(
 @pytest.fixture
 def settings(tmp_path: Path) -> Settings:
     return Settings(
-        db_path=tmp_path / "marketplace.db",
+        db_path=tmp_path / "registry.db",
         storage_backend="local",
         local_storage_dir=tmp_path / "artifacts",
     )

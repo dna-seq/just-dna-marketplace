@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from just_dna_marketplace.db.schema import connect, init_db
+from just_dna_registry.db.schema import connect, init_db
 
 # A minimal pre-0.5.0 `versions` table — no `needs_upgrade` column.
 _OLD_SCHEMA = """

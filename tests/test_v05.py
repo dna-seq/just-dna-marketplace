@@ -11,9 +11,9 @@ from just_dna_format.integrity import IntegrityError, verify_manifest
 from just_dna_format.manifest import ModuleManifest
 from just_dna_format.signing import generate_private_key_pem, public_key_b64_from_pem
 
-from just_dna_marketplace.api.app import create_app
-from just_dna_marketplace.config import Settings
-from just_dna_marketplace.db.repository import Repository
+from just_dna_registry.api.app import create_app
+from just_dna_registry.config import Settings
+from just_dna_registry.db.repository import Repository
 
 _YAML = """\
 schema_version: "1.0"

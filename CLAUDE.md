@@ -1,6 +1,6 @@
-# Agent Guidelines — just-dna-marketplace
+# Agent Guidelines — just-dna-registry
 
-This repo is the **annotation module marketplace**: a standalone, **server-side REST API
+This repo is the **annotation module registry**: a standalone, **server-side REST API
 service** (FastAPI) that catalogs, versions, validates, and serves annotation modules for the
 `just-dna-lite` ecosystem. **There is no frontend here** — the webui and Dagster pipelines are
 *consumers* of this API. Any UI concern (Reflex, Fomantic, PRS widgets) belongs in `just-dna-lite`,
@@ -32,8 +32,8 @@ This service **depends on `just-dna-pipelines`** for `validate_spec`, `compile_m
 
 ## Running the service
 
-- `uv run marketplace serve` starts the API (Typer CLI → uvicorn). `uv run pytest -q` runs tests.
-- The Typer CLI (`src/just_dna_marketplace/cli.py`) owns admin/ops tasks — `serve`, `init-db`,
+- `uv run registry serve` starts the API (Typer CLI → uvicorn). `uv run pytest -q` runs tests.
+- The Typer CLI (`src/just_dna_registry/cli.py`) owns admin/ops tasks — `serve`, `init-db`,
   `issue-key`, and future backfill/reindex. Add new ops commands there, not as ad-hoc scripts.
 - Deployable as one container + a bucket/HF repo + a DB. No heavyweight orchestration.
 
@@ -59,7 +59,7 @@ stale wrapper.
   contract. FastAPI response models should be explicit Pydantic types, not bare dicts.
 - **Typer CLI**: Mandatory for all CLI tools.
 - **Logging**: Use the standard-library `logging` system logger. **Eliot is being retired** (see
-  `docs/ROADMAP.md` → "Next marketplace version"): the remaining `eliot` usage (`start_action` in
+  `docs/ROADMAP.md` → "Next registry version"): the remaining `eliot` usage (`start_action` in
   `services/publish.py`, the Eliot→stdlib bridge in `logging_setup.py`) is rewired to stdlib
   `logging` next version, and the `eliot` dependency dropped. Do **not** add new Eliot usage; wrap
   multi-step work (publish, compile, backfill) with `logging` at INFO with structured `extra=`.
@@ -99,7 +99,7 @@ stale wrapper.
 
 ## Manifest & integrity (see SPEC §4–§6)
 
-- The `manifest.json` is the contract and the source of truth. Marketplace-level fields (`namespace`,
+- The `manifest.json` is the contract and the source of truth. Registry-level fields (`namespace`,
   `version`, `owner`, `license`, `published_at`, `canonical_id`) are filled by **this service** on
   publish; compile-time fields come from `compile_module()`.
 - **All hashes are SHA-256, lowercase hex, prefixed `sha256:`.**
@@ -180,6 +180,6 @@ row/unique counts derived from inspecting data is not.
 
 Part of a multi-root ecosystem: `just-dna-lite` (main app + webui), `just-dna-pipelines`
 (compiler/discovery — this service's dependency), `just-prs`, `prepare-annotations`, `dna-seq`.
-Treat sibling repos as **read-only** unless the task explicitly targets them. This marketplace plugs
-into the existing `Source` discovery model as *just another source* (`marketplace://`), so existing
+Treat sibling repos as **read-only** unless the task explicitly targets them. This registry plugs
+into the existing `Source` discovery model as *just another source* (`registry://`), so existing
 HuggingFace/local modules keep working with zero migration.

@@ -3,35 +3,37 @@ Admin CLI (Typer). Ops tasks that live outside the HTTP surface: run the server,
 DB, and issue API keys / namespaces for the static-key auth model.
 """
 
+import json
 import secrets
+from pathlib import Path
 
 import httpx
 import typer
 import uvicorn
 from just_dna_format.manifest import ModuleManifest
 
-from just_dna_marketplace.config import Settings, get_settings
-from just_dna_marketplace.db.repository import Repository
-from just_dna_marketplace.db.schema import connect, init_db
-from just_dna_marketplace.models.api import VALID_ACCOUNT_TYPES
-from just_dna_marketplace.services.pmid_check import verify_pmids
-from just_dna_marketplace.services.revalidate import gather_pmids, revalidate_version
-from just_dna_marketplace.services.upgrade import (
+from just_dna_registry.config import Settings, get_settings
+from just_dna_registry.db.repository import Repository
+from just_dna_registry.db.schema import connect, init_db
+from just_dna_registry.models.api import VALID_ACCOUNT_TYPES
+from just_dna_registry.services.pmid_check import verify_pmids
+from just_dna_registry.services.revalidate import gather_pmids, revalidate_version
+from just_dna_registry.services.upgrade import (
     is_latest_version,
     plan_version_upgrade,
     upgrade_version,
 )
-from just_dna_marketplace.storage.base import StorageBackend
-from just_dna_marketplace.storage.local import LocalStorage
+from just_dna_registry.storage.base import StorageBackend
+from just_dna_registry.storage.local import LocalStorage
 
-app = typer.Typer(help="just-dna-marketplace admin CLI", no_args_is_help=True)
+app = typer.Typer(help="just-dna-registry admin CLI", no_args_is_help=True)
 
 
 def _storage(settings: Settings) -> StorageBackend:
     if settings.storage_backend == "local":
         return LocalStorage(settings.local_storage_dir)
     if settings.storage_backend == "hf":
-        from just_dna_marketplace.storage.hf import HfStorage  # imports huggingface_hub lazily
+        from just_dna_registry.storage.hf import HfStorage  # imports huggingface_hub lazily
 
         return HfStorage(settings.hf_repo_id, token=settings.hf_token)
     raise typer.BadParameter(f"unsupported storage_backend {settings.storage_backend!r}")
@@ -40,7 +42,7 @@ def _storage(settings: Settings) -> StorageBackend:
 @app.command()
 def serve(host: str = "127.0.0.1", port: int = 8000, reload: bool = False) -> None:
     """Run the API server."""
-    uvicorn.run("just_dna_marketplace.api.app:app", host=host, port=port, reload=reload)
+    uvicorn.run("just_dna_registry.api.app:app", host=host, port=port, reload=reload)
 
 
 @app.command("init-db")
@@ -80,6 +82,57 @@ def issue_key(
     repo.add_api_key(key, account_id)
     typer.echo(f"account={account} type={account_type} namespaces={namespace}")
     typer.echo(f"API key: {key}")
+
+
+@app.command("export-keys")
+def export_keys(
+    out: Path = typer.Option(None, "--out", "-o", help="Write JSON here (default: stdout)"),
+) -> None:
+    """Export the auth graph — accounts, API keys, namespaces, memberships — for backup or a
+    preprod→prod migration. WARNING: the output contains live API-key tokens; keep it secret.
+
+    (The Ed25519 *signing* key is a separate PEM file at `REGISTRY_SIGNING_KEY`, never in the DB —
+    copy that file directly; it is unaffected by `reset-db`.)"""
+    settings = get_settings()
+    repo = Repository(connect(settings.db_path))
+    payload = json.dumps(repo.export_auth(), indent=2)
+    if out is not None:
+        out.write_text(payload + "\n", encoding="utf-8")
+        typer.echo(f"wrote auth export to {out} (contains secrets — protect it)")
+    else:
+        typer.echo(payload)
+
+
+@app.command("import-keys")
+def import_keys(path: Path = typer.Argument(..., help="JSON file produced by export-keys")) -> None:
+    """Restore an auth graph exported by `export-keys` (idempotent; preserves account ids). Use to
+    seed a fresh/reset DB or a new environment with the same accounts + API keys."""
+    settings = get_settings()
+    conn = connect(settings.db_path)
+    init_db(conn)  # ensure tables exist before importing
+    counts = Repository(conn).import_auth(json.loads(path.read_text(encoding="utf-8")))
+    typer.echo("imported " + ", ".join(f"{n} {k}" for k, n in counts.items()))
+
+
+@app.command("reset-db")
+def reset_db(
+    keep_keys: bool = typer.Option(
+        True, "--keep-keys/--wipe-keys",
+        help="Keep accounts + API keys (default), or wipe them too",
+    ),
+) -> None:
+    """Wipe the catalog projection (modules, versions, stars, reviews) — a fresh start. Accounts +
+    API keys are **kept** by default (so you don't lock yourself out); `--wipe-keys` clears them too.
+    Does NOT touch artifact storage. Requires typing RESET to confirm (destructive)."""
+    settings = get_settings()
+    scope = "the catalog" if keep_keys else "the catalog AND all accounts + API keys"
+    typer.echo(f"This will permanently delete {scope} in {settings.db_path}. Artifacts are untouched.")
+    if typer.prompt("Type RESET to confirm") != "RESET":
+        raise typer.Abort()
+    conn = connect(settings.db_path)
+    init_db(conn)
+    Repository(conn).reset_catalog(keep_auth=keep_keys)
+    typer.echo("catalog reset" + (" (accounts + API keys kept)" if keep_keys else " (keys wiped too)"))
 
 
 @app.command("add-member")

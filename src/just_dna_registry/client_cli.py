@@ -1,8 +1,8 @@
 """
-`marketplace-client` — a test/ops CLI for the marketplace API.
+`registry-client` — a test/ops CLI for the registry API.
 
-Points at a running server via `--url` (or `$MARKETPLACE_URL`) and authenticates publish/update
-with `--token` (or `$MARKETPLACE_TOKEN`). Commands: list, download, publish, find-by-hash,
+Points at a running server via `--url` (or `$REGISTRY_URL`) and authenticates publish/update
+with `--token` (or `$REGISTRY_TOKEN`). Commands: list, download, publish, find-by-hash,
 update-module-version.
 """
 
@@ -15,31 +15,31 @@ from dotenv import load_dotenv
 from just_dna_format.identity import parse_version
 from just_dna_format.manifest import read_manifest, write_manifest
 
-from just_dna_marketplace.client import MarketplaceClient, MarketplaceError
-from just_dna_marketplace.installid import generate_install_id
-from just_dna_marketplace.version import compatibility_error
+from just_dna_registry.client import RegistryClient, RegistryError
+from just_dna_registry.installid import generate_install_id
+from just_dna_registry.version import compatibility_error
 
-load_dotenv()  # pick up MARKETPLACE_URL / MARKETPLACE_TOKEN from a local .env
+load_dotenv()  # pick up REGISTRY_URL / REGISTRY_TOKEN from a local .env
 
-app = typer.Typer(help="Marketplace test client", no_args_is_help=True)
+app = typer.Typer(help="Registry test client", no_args_is_help=True)
 
-_URL_ENV = "MARKETPLACE_URL"
-_TOKEN_ENV = "MARKETPLACE_TOKEN"
-_SKIP_VERSION_ENV = "MARKETPLACE_SKIP_VERSION_CHECK"
+_URL_ENV = "REGISTRY_URL"
+_TOKEN_ENV = "REGISTRY_TOKEN"
+_SKIP_VERSION_ENV = "REGISTRY_SKIP_VERSION_CHECK"
 
 
-def _client(url: Optional[str], token: Optional[str], *, need_token: bool = False) -> MarketplaceClient:
+def _client(url: Optional[str], token: Optional[str], *, need_token: bool = False) -> RegistryClient:
     base = url or os.getenv(_URL_ENV) or "http://127.0.0.1:8000"
     tok = token or os.getenv(_TOKEN_ENV)
     if need_token and not tok:
         raise typer.BadParameter(f"a token is required (pass --token or set ${_TOKEN_ENV})")
-    timeout = float(os.getenv("MARKETPLACE_TIMEOUT", "600"))  # big modules recompile for minutes
-    # Escape hatch: set MARKETPLACE_SKIP_VERSION_CHECK=1 to bypass the contract guard knowingly.
+    timeout = float(os.getenv("REGISTRY_TIMEOUT", "600"))  # big modules recompile for minutes
+    # Escape hatch: set REGISTRY_SKIP_VERSION_CHECK=1 to bypass the contract guard knowingly.
     check_version = os.getenv(_SKIP_VERSION_ENV, "").strip().lower() not in ("1", "true", "yes")
-    return MarketplaceClient(base, tok, timeout=timeout, check_version=check_version)
+    return RegistryClient(base, tok, timeout=timeout, check_version=check_version)
 
 
-UrlOpt = typer.Option(None, "--url", help=f"Marketplace base URL (or ${_URL_ENV})")
+UrlOpt = typer.Option(None, "--url", help=f"Registry base URL (or ${_URL_ENV})")
 TokenOpt = typer.Option(None, "--token", help=f"API key for publish (or ${_TOKEN_ENV})")
 
 
@@ -50,13 +50,13 @@ def show_versions(url: Optional[str] = UrlOpt) -> None:
         local = c.local_version
         server = c.server_version()
     typer.echo(
-        f"client:  marketplace {local.marketplace}  format {local.format}  api {local.api}"
+        f"client:  registry {local.registry}  format {local.format}  api {local.api}"
     )
     if server is None:
         typer.secho("server:  (pre-0.7.1 — does not report its version)", fg=typer.colors.YELLOW)
         raise typer.Exit(0)
     typer.echo(
-        f"server:  marketplace {server.marketplace}  format {server.format}  "
+        f"server:  registry {server.registry}  format {server.format}  "
         f"compiler {server.compiler}  api {server.api}"
     )
     message = compatibility_error(server, local)
@@ -265,7 +265,7 @@ def update_module_version(
     with _client(url, token, need_token=True) as c:
         try:
             detail = c.get_module(namespace, name)
-        except MarketplaceError as exc:
+        except RegistryError as exc:
             if exc.status_code == 404:
                 raise typer.BadParameter(
                     f"{namespace}/{name} does not exist yet — use `publish` for the first version"

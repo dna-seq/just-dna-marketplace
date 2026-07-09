@@ -218,7 +218,7 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# Marketplace runtime state (catalog DB + local artifact store)
+# Registry runtime state (catalog DB + local artifact store)
 /data/
 
 # Editor swap/backup files

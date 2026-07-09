@@ -10,10 +10,10 @@ from typing import Annotated, Optional
 
 from fastapi import Depends, Header, HTTPException, Query, Request, status
 
-from just_dna_marketplace.config import Settings
-from just_dna_marketplace.db.repository import Repository
-from just_dna_marketplace.jwtauth import decode_jwt
-from just_dna_marketplace.storage.base import StorageBackend
+from just_dna_registry.config import Settings
+from just_dna_registry.db.repository import Repository
+from just_dna_registry.jwtauth import decode_jwt
+from just_dna_registry.storage.base import StorageBackend
 
 
 def get_repo(request: Request) -> Repository:

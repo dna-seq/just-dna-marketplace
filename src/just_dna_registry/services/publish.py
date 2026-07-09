@@ -3,7 +3,7 @@ Server-side publish (SPEC §7, §8.6–§8.7): the trust-bearing path.
 
 The publisher uploads the **spec only** (as individual files or a zip/tar.gz archive); the server
 validates it, runs `compile_module` itself (so `compile_success`, input hashes, and the artifact
-digest are produced by the trusted party), fills the marketplace-level manifest fields, stores the
+digest are produced by the trusted party), fills the registry-level manifest fields, stores the
 compiled module under a version key, and indexes the manifest.
 
 Legacy modules that ship only compiled parquets (the old zip format, no manifest) are imported by
@@ -32,10 +32,10 @@ from just_dna_format.manifest import (
 )
 from just_dna_format.signing import sign_digest
 
-from just_dna_marketplace.config import Settings
-from just_dna_marketplace.db.repository import Repository
-from just_dna_marketplace.services.ingest import ingest_manifest, now_iso
-from just_dna_marketplace.storage.base import StorageBackend, version_key
+from just_dna_registry.config import Settings
+from just_dna_registry.db.repository import Repository
+from just_dna_registry.services.ingest import ingest_manifest, now_iso
+from just_dna_registry.storage.base import StorageBackend, version_key
 
 REQUIRED_SPEC_FILES: tuple[str, ...] = ("module_spec.yaml", "variants.csv", "studies.csv")
 _REVERSE_MARKER: str = "weights.parquet"  # a legacy compiled module has this but no spec
@@ -158,6 +158,11 @@ def _finalize(
                 out_dir,
                 resolve_with_ensembl=settings.resolve_with_ensembl,
                 ensembl_cache=settings.ensembl_cache,
+                # Trust token stamped into the manifest + enforced by just-dna-format's
+                # verify_manifest. Deliberately kept as the legacy value "marketplace-server" across
+                # the registry rebrand: it's an internal token (not user-facing), and changing it
+                # would invalidate every already-published manifest until re-baked. Retire at the
+                # next just-dna-format major cleanup, not here.
                 compiled_by=MARKETPLACE_COMPILED_BY,
                 ensembl_reference=settings.ensembl_reference,
             )

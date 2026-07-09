@@ -2,8 +2,8 @@
 
 import pytest
 
-from just_dna_marketplace.config import Settings
-from just_dna_marketplace.startup import validate_hf_access
+from just_dna_registry.config import Settings
+from just_dna_registry.startup import validate_hf_access
 
 
 def test_local_backend_skips_hf_check() -> None:

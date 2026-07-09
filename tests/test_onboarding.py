@@ -6,8 +6,8 @@ import pytest
 from fastapi.testclient import TestClient
 from just_dna_format.manifest import ModuleManifest
 
-from just_dna_marketplace.config import Settings
-from just_dna_marketplace.installid import (
+from just_dna_registry.config import Settings
+from just_dna_registry.installid import (
     generate_install_id,
     validate_install_id,
 )
@@ -39,7 +39,7 @@ def test_invalid_install_ids_rejected() -> None:
 
 @pytest.fixture
 def onboarding_app(tmp_path):
-    from just_dna_marketplace.api.app import create_app
+    from just_dna_registry.api.app import create_app
 
     return create_app(
         Settings(

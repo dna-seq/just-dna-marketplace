@@ -24,10 +24,10 @@ from just_dna_format.manifest import ModuleManifest
 from just_dna_format.spec import VariantRow
 from pydantic import BaseModel, Field
 
-from just_dna_marketplace.config import Settings
-from just_dna_marketplace.db.repository import Repository
-from just_dna_marketplace.services.publish import REQUIRED_SPEC_FILES, publish_version
-from just_dna_marketplace.storage.base import StorageBackend, version_key
+from just_dna_registry.config import Settings
+from just_dna_registry.db.repository import Repository
+from just_dna_registry.services.publish import REQUIRED_SPEC_FILES, publish_version
+from just_dna_registry.storage.base import StorageBackend, version_key
 
 # The columns `VariantRow.upgraded()` may set, mirrored back into the CSV. `state` stays present
 # (trimmed to a derived mirror of `direction`); the booleans are only ever set True or left blank.

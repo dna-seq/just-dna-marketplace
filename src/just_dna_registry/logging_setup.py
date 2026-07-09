@@ -1,5 +1,5 @@
 """
-Logging configuration. `MARKETPLACE_DEBUG=true` turns everything up to DEBUG on stdout so a live
+Logging configuration. `REGISTRY_DEBUG=true` turns everything up to DEBUG on stdout so a live
 server's console/journal shows exactly what happened — request tracing, the compiler/duckdb/uvicorn
 internals, and the Eliot-structured publish/import steps.
 
@@ -13,7 +13,7 @@ import sys
 
 from eliot import add_destinations
 
-from just_dna_marketplace.config import Settings
+from just_dna_registry.config import Settings
 
 # Third-party loggers that are too chatty at DEBUG — pinned to WARNING.
 _NOISY: tuple[str, ...] = (
@@ -50,4 +50,4 @@ def configure_logging(settings: Settings) -> None:
         add_destinations(_eliot_to_stdlib)
         _eliot_wired = True
 
-    logging.getLogger("marketplace").debug("logging configured (debug=%s)", settings.debug)
+    logging.getLogger("registry").debug("logging configured (debug=%s)", settings.debug)

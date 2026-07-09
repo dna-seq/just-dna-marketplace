@@ -7,8 +7,8 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from just_dna_marketplace.client import MarketplaceClient, VersionMismatchError
-from just_dna_marketplace.version import (
+from just_dna_registry.client import RegistryClient, VersionMismatchError
+from just_dna_registry.version import (
     VersionInfo,
     compatibility_error,
     contract_compatible,
@@ -27,19 +27,19 @@ def test_contract_compatible_rules() -> None:
 
 
 def test_compatibility_error_is_actionable() -> None:
-    server = VersionInfo(api="v1", marketplace="0.7.1", format="0.3.0", compiler="0.3.0")
+    server = VersionInfo(api="v1", registry="0.7.1", format="0.3.0", compiler="0.3.0")
     assert compatibility_error(server, server) is None
 
-    old_client = VersionInfo(api="v1", marketplace="0.6.0", format="0.2.0")
+    old_client = VersionInfo(api="v1", registry="0.6.0", format="0.2.0")
     msg = compatibility_error(server, old_client)
     assert msg is not None and "just-dna-format contract mismatch" in msg
 
-    # A differing marketplace *app* version is not fatal — the API is path-versioned.
-    diff_app = VersionInfo(api="v1", marketplace="0.6.0", format="0.3.0")
+    # A differing registry *app* version is not fatal — the API is path-versioned.
+    diff_app = VersionInfo(api="v1", registry="0.6.0", format="0.3.0")
     assert compatibility_error(server, diff_app) is None
 
     # A differing API major is fatal.
-    v2_client = VersionInfo(api="v2", marketplace="0.7.1", format="0.3.0")
+    v2_client = VersionInfo(api="v2", registry="0.7.1", format="0.3.0")
     msg2 = compatibility_error(server, v2_client)
     assert msg2 is not None and "API version mismatch" in msg2
 
@@ -50,11 +50,11 @@ def test_compatibility_error_is_actionable() -> None:
 def test_version_endpoint_and_response_headers(client: TestClient) -> None:
     body = client.get("/api/v1/version").json()
     assert body["api"] == "v1"
-    assert body["marketplace"] and body["format"]  # both installed in the test env
+    assert body["registry"] and body["format"]  # both installed in the test env
 
     headers = client.get("/health").headers
     assert headers["X-API-Version"] == "v1"
-    assert headers["X-Marketplace-Version"]
+    assert headers["X-Registry-Version"]
     assert "X-Format-Version" in headers
 
 
@@ -63,8 +63,8 @@ def test_version_endpoint_and_response_headers(client: TestClient) -> None:
 # logic by stubbing the network layer — the real `/version` HTTP path is covered above via TestClient.
 
 
-def _mk(**kw) -> MarketplaceClient:
-    return MarketplaceClient("http://testserver", **kw)
+def _mk(**kw) -> RegistryClient:
+    return RegistryClient("http://testserver", **kw)
 
 
 def _version_response(status: int, payload: dict | None = None) -> httpx.Response:
@@ -75,7 +75,7 @@ def _version_response(status: int, payload: dict | None = None) -> httpx.Respons
 
 def test_server_version_parses_and_handles_a_pre_0_7_1_server(monkeypatch) -> None:
     with _mk() as c:
-        payload = {"api": "v1", "marketplace": "0.7.1", "format": "0.3.0", "compiler": "0.3.0"}
+        payload = {"api": "v1", "registry": "0.7.1", "format": "0.3.0", "compiler": "0.3.0"}
         monkeypatch.setattr(c._http, "get", lambda url, *a, **k: _version_response(200, payload))
         assert c.server_version().format == "0.3.0"
         # A server too old to expose /version 404s → None (not an error).
@@ -91,7 +91,7 @@ def test_client_passes_when_compatible(monkeypatch) -> None:
 
 def test_client_raises_on_contract_mismatch(monkeypatch) -> None:
     with _mk() as c:
-        bad = VersionInfo(api="v1", marketplace="9.9.9", format="0.99.0")
+        bad = VersionInfo(api="v1", registry="9.9.9", format="0.99.0")
         monkeypatch.setattr(c, "server_version", lambda: bad)
         with pytest.raises(VersionMismatchError) as ei:
             c.assert_compatible()
@@ -105,7 +105,7 @@ def test_client_raises_on_contract_mismatch(monkeypatch) -> None:
 def test_guard_is_skippable(monkeypatch) -> None:
     with _mk(check_version=False) as c:
         monkeypatch.setattr(
-            c, "server_version", lambda: VersionInfo(api="v1", marketplace="9", format="0.99.0")
+            c, "server_version", lambda: VersionInfo(api="v1", registry="9", format="0.99.0")
         )
         c.assert_compatible()  # disabled → no-op even against an incompatible server
 

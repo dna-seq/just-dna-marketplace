@@ -1,13 +1,15 @@
-# Marketplace page — deliverable for the just-dna-lite webui
+# Store page — deliverable for the just-dna-lite webui
 
-What this repo hands the webui team to build a **Marketplace** page on, and how the pieces connect.
-The heavy lifting (REST calls + integrity verification + provenance) is the reference client;
-the webui builds the Reflex components on top.
+What this repo hands the webui team to build the **Store** on, and how the pieces connect. The Store
+is the app-store-style in-app surface (browse, one-click install, like App Store / Play Store / MS
+Store — free, not commerce); it sits on top of the **registry** backend (this service). The heavy
+lifting (REST calls + integrity verification + provenance) is the reference client; the webui builds
+the Reflex components on top.
 
 ## What's provided here (build on these)
 
-- **`just_dna_marketplace.MarketplaceClient`** — the light client (deps: `httpx` + `just-dna-format`;
-  `pip install just-dna-marketplace`, no server extra). Every page action maps to one method — see
+- **`just_dna_registry.RegistryClient`** — the light client (deps: `httpx` + `just-dna-format`;
+  `pip install just-dna-registry`, no server extra). Every page action maps to one method — see
   [CLIENT.md](CLIENT.md).
 - **Stable response shapes** — cards, detail, versions, manifest — in [API-REFERENCE.md](API-REFERENCE.md).
 - **Provenance primitives** — `manifest.json` fields + `lookup_by_digests` (no spec change needed).
@@ -33,13 +35,13 @@ The webui only adds: Reflex state + components, and the install/publish glue to 
 Read the local module's `manifest.json`:
 
 - `compilation.compiled_by == "marketplace-server"` and `identity.namespace` set → **Installed from
-  marketplace** → show `identity.canonical_id`, offer "check for updates" (compare `latest_version`).
+  registry** → show `identity.canonical_id`, offer "check for updates" (compare `latest_version`).
 - null `identity` → **Custom (local)**. To flag "published by me", `lookup_by_digests` the local
   `artifact.digest` (or rely on the publish-time stamp the client writes back).
 
 ## Onboarding (publish without leaving the app)
 
-1. First run: mint an install-id — `from just_dna_marketplace import generate_install_id`
+1. First run: mint an install-id — `from just_dna_registry import generate_install_id`
    (proof-of-work, a few seconds; persist it).
 2. `client.register(install_id, account)` → `{token, account, namespaces}`; store the token.
 3. `client.namespace_available(ns)` → `client.claim_namespace(ns)` (up to 5 per account).
@@ -48,14 +50,14 @@ Read the local module's `manifest.json`:
 ## Suggested Reflex state (sketch)
 
 ```python
-class MarketplaceState(rx.State):
+class RegistryState(rx.State):
     query: str = ""; sort: str = "name"; page: int = 1
     cards: list[dict] = []; total: int = 0
     selected: dict | None = None          # detail
     token: str = ""; install_id: str = "" # onboarding (persisted)
 
     def _client(self):
-        return MarketplaceClient(MARKETPLACE_URL, self.token or None)
+        return RegistryClient(REGISTRY_URL, self.token or None)
 
     @rx.event(background=True)   # network → keep off the UI lock (see AGENTS.md Reflex rules)
     async def search(self):
@@ -65,7 +67,7 @@ class MarketplaceState(rx.State):
             self.cards, self.total = body["items"], body["total"]
 ```
 
-Config: the webui needs `MARKETPLACE_URL` (default `https://module-marketplace.just-dna.life`); the
+Config: the webui needs `REGISTRY_URL` (default `https://module-registry.just-dna.life`); the
 token comes from onboarding, stored per user. Run network calls in `@rx.event(background=True)` so
 they don't hold the Reflex state lock (per just-dna-lite's Reflex guidance).
 

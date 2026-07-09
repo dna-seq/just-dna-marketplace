@@ -1,5 +1,5 @@
 """
-HTTP client for the marketplace API — powers the `marketplace-client` CLI and live integration
+HTTP client for the registry API — powers the `registry-client` CLI and live integration
 tests. Depends only on `httpx` + the `just-dna-format` contract (for verify-then-install).
 """
 
@@ -11,11 +11,11 @@ import httpx
 from just_dna_format.integrity import verify_manifest
 from just_dna_format.manifest import ModuleManifest, write_manifest
 
-from just_dna_marketplace.version import VersionInfo, compatibility_error
+from just_dna_registry.version import VersionInfo, compatibility_error
 
 API_PREFIX: str = "/api/v1"
 
-_log = logging.getLogger("marketplace.client")
+_log = logging.getLogger("registry.client")
 
 # Spec inputs a publisher uploads; compiled outputs are produced server-side, never uploaded.
 _SKIP_UPLOAD_SUFFIXES: frozenset[str] = frozenset({".parquet"})
@@ -39,8 +39,8 @@ def gather_spec_files(spec_dir: Path) -> list[tuple[str, bytes]]:
     return out
 
 
-class MarketplaceError(RuntimeError):
-    """A non-2xx response from the marketplace API."""
+class RegistryError(RuntimeError):
+    """A non-2xx response from the registry API."""
 
     def __init__(self, status_code: int, detail: Any) -> None:
         super().__init__(f"HTTP {status_code}: {detail}")
@@ -48,7 +48,7 @@ class MarketplaceError(RuntimeError):
         self.detail = detail
 
 
-class VersionMismatchError(MarketplaceError):
+class VersionMismatchError(RegistryError):
     """The server and this client disagree on the API / `just-dna-format` contract, so exchanging
     compiled artifacts would collide. Raised before publish/download rather than letting a cryptic
     digest or shape error surface downstream."""
@@ -60,8 +60,8 @@ class VersionMismatchError(MarketplaceError):
         self.client = client
 
 
-class MarketplaceClient:
-    """Thin sync client over the marketplace REST API."""
+class RegistryClient:
+    """Thin sync client over the registry REST API."""
 
     def __init__(
         self,
@@ -75,7 +75,7 @@ class MarketplaceClient:
         self.local_version = VersionInfo.local()
         headers = {
             # Advertise the client's versions so the server can log/guard the exchange too.
-            "X-Marketplace-Client-Version": self.local_version.marketplace,
+            "X-Registry-Client-Version": self.local_version.registry,
             "X-Format-Version": self.local_version.format or "",
             "X-API-Version": self.local_version.api,
         }
@@ -94,7 +94,7 @@ class MarketplaceClient:
     def close(self) -> None:
         self._http.close()
 
-    def __enter__(self) -> "MarketplaceClient":
+    def __enter__(self) -> "RegistryClient":
         return self
 
     def __exit__(self, *exc: object) -> None:
@@ -134,7 +134,7 @@ class MarketplaceClient:
                 detail = resp.json().get("detail", resp.text)
             except Exception:
                 detail = resp.text
-            raise MarketplaceError(resp.status_code, detail)
+            raise RegistryError(resp.status_code, detail)
         return resp.json()
 
     # ── Reads ─────────────────────────────────────────────────────────────────
@@ -184,7 +184,7 @@ class MarketplaceClient:
     def _fetch_file(self, namespace: str, name: str, version: str, rel: str) -> bytes:
         resp = self._http.get(f"/modules/{namespace}/{name}/versions/{version}/files/{rel}")
         if resp.status_code >= 400:
-            raise MarketplaceError(resp.status_code, resp.text)
+            raise RegistryError(resp.status_code, resp.text)
         return resp.content
 
     def pubkey(self) -> Optional[str]:
@@ -306,7 +306,7 @@ class MarketplaceClient:
             f"/modules/{namespace}/{name}/versions/{version}/download", params={"format": "tarball"}
         )
         if resp.status_code >= 400:
-            raise MarketplaceError(resp.status_code, resp.text)
+            raise RegistryError(resp.status_code, resp.text)
         dest = Path(dest)
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(resp.content)

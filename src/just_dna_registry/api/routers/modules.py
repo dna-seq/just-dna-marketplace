@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from just_dna_format.manifest import ModuleManifest
 from pydantic import BaseModel
 
-from just_dna_marketplace.api.deps import (
+from just_dna_registry.api.deps import (
     Account,
     Pagination,
     get_repo,
@@ -22,18 +22,18 @@ from just_dna_marketplace.api.deps import (
     require_account,
     settings_dep,
 )
-from just_dna_marketplace.config import Settings
-from just_dna_marketplace.db.repository import Repository
-from just_dna_marketplace.groups import GROUPS, GroupInfo
-from just_dna_marketplace.models.api import (
+from just_dna_registry.config import Settings
+from just_dna_registry.db.repository import Repository
+from just_dna_registry.groups import GROUPS, GroupInfo
+from just_dna_registry.models.api import (
     ModuleCard,
     ModuleDetail,
     Page,
     StarStatus,
     VersionSummary,
 )
-from just_dna_marketplace.services import catalog
-from just_dna_marketplace.storage.base import StorageBackend, version_key
+from just_dna_registry.services import catalog
+from just_dna_registry.storage.base import StorageBackend, version_key
 
 router = APIRouter(prefix="/modules", tags=["catalog"])
 
@@ -106,7 +106,7 @@ def list_groups() -> list[GroupInfo]:
 def lookup_by_digest(repo: RepoDep, digest: str) -> dict:
     """Find published versions whose artifact matches `digest` (the content identity, SPEC §6).
 
-    Lets a publisher check whether an already-compiled module is on the marketplace before
+    Lets a publisher check whether an already-compiled module is on the registry before
     re-uploading. Returns `{matches: [{namespace, name, version, yanked}]}` (empty if none).
     """
     return {"digest": digest, "matches": _digest_matches(repo, digest)}

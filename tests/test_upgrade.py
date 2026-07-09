@@ -9,14 +9,14 @@ import io
 from fastapi.testclient import TestClient
 from just_dna_format.manifest import ModuleManifest
 
-from just_dna_marketplace.config import Settings
-from just_dna_marketplace.services.revalidate import revalidate_version
-from just_dna_marketplace.services.upgrade import (
+from just_dna_registry.config import Settings
+from just_dna_registry.services.revalidate import revalidate_version
+from just_dna_registry.services.upgrade import (
     is_latest_version,
     plan_variants_upgrade,
     upgrade_version,
 )
-from just_dna_marketplace.storage.base import version_key
+from just_dna_registry.storage.base import version_key
 
 _YAML = """\
 schema_version: "1.0"

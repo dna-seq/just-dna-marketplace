@@ -8,10 +8,10 @@ from typing import Optional
 
 from just_dna_format.manifest import ModuleManifest
 
-from just_dna_marketplace import groups
-from just_dna_marketplace.config import API_PREFIX
-from just_dna_marketplace.db.repository import Repository
-from just_dna_marketplace.models.api import (
+from just_dna_registry import groups
+from just_dna_registry.config import API_PREFIX
+from just_dna_registry.db.repository import Repository
+from just_dna_registry.models.api import (
     CardStats,
     ModuleCard,
     ModuleDetail,

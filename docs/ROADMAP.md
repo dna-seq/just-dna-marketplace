@@ -1,6 +1,6 @@
-# just-dna-marketplace — Roadmap
+# just-dna-registry — Roadmap
 
-Priority-ordered plan for building the annotation module marketplace, MVP-first. The full
+Priority-ordered plan for building the annotation module registry, MVP-first. The full
 contract lives in [SPEC.md](SPEC.md); this doc is the *build order*. Section references (§) point
 into the spec.
 
@@ -73,8 +73,8 @@ proof-of-work rather than admin issuance.
   `POST /api/v1/modules/lookup {digests:[...]}` classifies many local modules in one request
   (digests are already in each manifest — no client hashing, one indexed query). **The DSL
   `module_spec.yaml` is deliberately not changed** — provenance lives in the manifest (its layer).
-- ✅ **Client + CLI:** `MarketplaceClient.register/namespace_available/claim_namespace/lookup_by_digests`;
-  `marketplace-client register|namespace-available|claim-namespace`; `generate_install_id` exported.
+- ✅ **Client + CLI:** `RegistryClient.register/namespace_available/claim_namespace/lookup_by_digests`;
+  `registry-client register|namespace-available|claim-namespace`; `generate_install_id` exported.
 
 DB: `accounts.install_id` (unique, nullable — admin keys exempt) added via an idempotent migration
 so the live catalog upgrades in place. Still deferred: expiring JWTs / OAuth, org membership, and
@@ -90,14 +90,14 @@ backfill dropped (existing annotators are processed elsewhere).
   restricts. Card carries `featured`. Admin CLI `feature`/`unfeature`.
 - ✅ **Blacklisted namespaces** — hidden from default `GET /modules` + search; reachable via
   `?namespace=`, `?include_blacklisted=true`, or direct detail. Admin CLI `blacklist`/`unblacklist`.
-- ✅ **Key revocation** — `marketplace revoke-key` / `revoke-account` (closes the leaked-key gap).
+- ✅ **Key revocation** — `registry revoke-key` / `revoke-account` (closes the leaked-key gap).
 - ✅ **Rate limiting** (SPEC §7) — in-memory token buckets per caller × category on
   search/download/publish; `429 rate_limited`; configurable, on by default.
 - ✅ **`HfStorage` backend** — HF dataset repo under `data/{ns}/{name}/{version}/…`; writes via a
   single commit, reads via `HfFileSystem`, `file_url` → HF `resolve` CDN URL so downloads `302`.
   Selected by `storage_backend=hf`; the startup token guard (0.2.1) gates it. *Live commit/read is
   integration-tested with a real token + public repo (offline unit tests cover paths/URLs).*
-- ✅ **webui marketplace-page deliverable** — [WEBUI-MARKETPLACE.md](WEBUI-MARKETPLACE.md): the
+- ✅ **webui registry-page deliverable** — [WEBUI-STORE.md](WEBUI-STORE.md): the
   client + response shapes + provenance/onboarding wiring the webui builds its catalog page on.
 
 - ✅ **Optional JWT sessions** — `POST /auth/tokens` exchanges a static API key for a short-lived
@@ -105,7 +105,7 @@ backfill dropped (existing annotators are processed elsewhere).
   (backwards-compatible, 0.4 behaviour unchanged).
 
 **Dropped (planning legacy).** The **prebuilt-parquet upload / "trust-but-verify"** mode is gone:
-it only existed so the marketplace could avoid bundling the compiler — but we recompile server-side
+it only existed so the registry could avoid bundling the compiler — but we recompile server-side
 now, so there's no prebuilt artifact to ingest. (If we ever need to *check reproducibility* of two
 compiles, compare parquet **frame-shape + canonically-sorted content** rather than byte digests —
 parquet isn't byte-deterministic across arrow versions. Not needed today.)
@@ -124,10 +124,10 @@ parquet isn't byte-deterministic across arrow versions. Not needed today.)
 
 ### Current state (2026-07-07) — v0.4.0, live
 
-**Live** at <https://module-marketplace.just-dna.life>. Depends on the published PyPI packages
+**Live** at <https://module-registry.just-dna.life>. Depends on the published PyPI packages
 `just-dna-format>=0.1.0` + `just-dna-compiler>=0.1.0`. **39 tests green**; full integration run
 passed against the live server. Packaged **client-first**: default install is the reference client
-(`from just_dna_marketplace import MarketplaceClient`); the server is the `[server]` extra.
+(`from just_dna_registry import RegistryClient`); the server is the `[server]` extra.
 
 Shipped (beyond the core M2–M5 loop):
 
@@ -138,10 +138,10 @@ Shipped (beyond the core M2–M5 loop):
 - ✅ **Logs over the API** (`…/versions/{v}/logs` + file serving).
 - ✅ **Digest lookup** (`GET /modules/lookup?digest=`).
 - ✅ **Auth** (static keys) + ownership, **whoami**, **yank/un-yank**.
-- ✅ **Ops-only hard removal** (`marketplace remove-module` / `remove-namespace`).
-- ✅ **Debug logging** behind `MARKETPLACE_DEBUG` (request tracing + Eliot pipeline steps).
+- ✅ **Ops-only hard removal** (`registry remove-module` / `remove-namespace`).
+- ✅ **Debug logging** behind `REGISTRY_DEBUG` (request tracing + Eliot pipeline steps).
 - ✅ **HF token startup guard** — `storage_backend=hf` validates a write-capable token or exits 1.
-- ✅ **Reference client + CLI** (`marketplace-client`); docs: `API-REFERENCE.md`, `CLIENT.md`,
+- ✅ **Reference client + CLI** (`registry-client`); docs: `API-REFERENCE.md`, `CLIENT.md`,
   `CHANGELOG.md`, `.env.template`.
 
 What remains for a full MVP:
@@ -154,16 +154,16 @@ What remains for a full MVP:
 - **Rate limiting** (M6); cross-version provenance aggregation.
 - **Ensembl at publish** is opt-in: `resolve_with_ensembl` defaults **off** (specs must carry
   positions); enable with a reference cache via `JUST_DNA_PIPELINES_CACHE_DIR` /
-  `MARKETPLACE_ENSEMBL_CACHE`.
+  `REGISTRY_ENSEMBL_CACHE`.
 
-Run it: `uv run marketplace serve` · issue a key: `uv run marketplace issue-key <acct> -n <ns>`.
+Run it: `uv run registry serve` · issue a key: `uv run registry issue-key <acct> -n <ns>`.
 
 ### M0 — `just-dna-format` shared contract package
 
 Minimal package, Python ≥3.13, deps: `pydantic` + stdlib only.
 
 - **Manifest models (§4):** `ModuleManifest` with `Identity`, `Display`, `Stats`, `Compilation`,
-  `InputFile`, `Artifact`/`ArtifactFile`. Marketplace-only fields (namespace, version, owner,
+  `InputFile`, `Artifact`/`ArtifactFile`. Registry-only fields (namespace, version, owner,
   license, published_at, canonical_id) are `Optional`, filled on publish.
 - **Integrity helpers (§5):** `sha256_file() -> "sha256:…"`; `artifact_digest(files)` (canonical
   Merkle root — JSON array of `{name,sha256,size}` sorted by name, `sort_keys`, no whitespace, then
@@ -182,7 +182,7 @@ Minimal package, Python ≥3.13, deps: `pydantic` + stdlib only.
 - **A4:** promote `_SPEC_SUFFIXES` to a module-level constant and add `.json` so `manifest.json`
   survives `register_custom_module`.
 
-### M2 — marketplace service skeleton (this repo)
+### M2 — registry service skeleton (this repo)
 
 - **Deps** (`uv add`): `just-dna-format`, `just-dna-pipelines` (path/workspace), a DB layer (SQLite),
   `huggingface-hub`, `eliot`, `python-dotenv`. Drop `polars-bio` from direct deps unless the API
@@ -195,7 +195,7 @@ Minimal package, Python ≥3.13, deps: `pydantic` + stdlib only.
   tables.
 - FastAPI app factory + `/health`, Eliot logging, Typer admin CLI stub.
 
-Proposed layout: `src/just_dna_marketplace/{config,cli}.py`, `db/`, `storage/` (abstract
+Proposed layout: `src/just_dna_registry/{config,cli}.py`, `db/`, `storage/` (abstract
 `StorageBackend` + `HfStorage`), `api/{app,deps}.py`, `api/routers/`, `services/`.
 
 ### M3 — read / catalog API (no auth)
@@ -227,7 +227,7 @@ response models.
 `GET .../versions/{v}/download` → `302` to the HF `resolve` URL for the module tarball;
 `?format=files` → per-file `{name,url,sha256,size}`. `GET .../versions/{v}/files/{file}` → redirect
 to the HF file URL. Increment the `downloads` counter. Ship a reference client verify-then-install
-built on `just_dna_format.verify_manifest` (also the seed for the future webui `marketplace://`
+built on `just_dna_format.verify_manifest` (also the seed for the future webui `registry://`
 source).
 
 ### M6 — yank + finish
@@ -248,7 +248,7 @@ limiting (publish/download/search buckets, §7) — a simple in-memory token buc
 - **Ed25519 signing** of `artifact.digest` + published pubkey (§5 "Future").
 - **Postgres** migration; **FTS5** / advanced search; download analytics.
 - **S3/MinIO** storage backend behind the same `StorageBackend` interface.
-- **webui / Dagster consumer integration** (§11 — `marketplace://` source branch, catalog page) —
+- **webui / Dagster consumer integration** (§11 — `registry://` source branch, catalog page) —
   lives in `just-dna-lite`, not this repo.
 
 ### Namespace curation & moderation
@@ -262,7 +262,7 @@ limiting (publish/download/search buckets, §7) — a simple in-memory token buc
   `?namespace=<ns>`). Distinct from yank (which is per-version); this hides an entire namespace
   without deleting it. For spam/abuse.
 - **Server-side hard removal (ops-only, not the API, not yank)** — ✅ **done**: admin CLI
-  `marketplace remove-module <ns> <name>` and `remove-namespace <ns>` purge DB rows (versions +
+  `registry remove-module <ns> <name>` and `remove-namespace <ns>` purge DB rows (versions +
   `version_genes`/`version_categories` cascade, modules, namespace ownership) **and** the stored
   artifacts (`storage.remove`), so the namespace is fully reclaimable — a new key re-submits with
   old versions gone. Off the public API (ops/console only), `--yes` to skip the confirm.
@@ -279,14 +279,14 @@ limiting (publish/download/search buckets, §7) — a simple in-memory token buc
   legacy module still *validates*; the audit distinguishes `ok` / **`upgradable`** (validates, but
   the additive axes can be back-populated from the legacy `state`/booleans) / `needs_upgrade` (fails
   the current validator) / `skipped`. `--set-flag` marks both `upgradable` and `needs_upgrade`.
-- **New `marketplace upgrade` command + `services/upgrade.py`.** Consumes the format's own
+- **New `registry upgrade` command + `services/upgrade.py`.** Consumes the format's own
   `VariantRow.upgraded()` derivation to migrate a version's `variants.csv` (back-populate
   `direction`/`stat_significance`/`clin_sig` + trim `state`) and re-publish as the next PATCH through
   the normal server-side compile path. Dry-run by default; `--apply` publishes. The predecessor is
   never mutated (immutability) and the transform is idempotent. This is the automation of
   `docs/UPGRADE.md` step 3 for the 0.3 additive-column contract.
 - The diplotype/copy-number *shapes* (format items 7/7b) stay representation-only until a consumer
-  (just-dna-lite) can call them; nothing marketplace-side is needed for them yet.
+  (just-dna-lite) can call them; nothing registry-side is needed for them yet.
 
 ### 0.7.1 — server/client version-mismatch guard
 
@@ -294,24 +294,24 @@ Bumping the format contract to 0.3 surfaced a real collision: a client on one `j
 contract talking to a server on another produces a cryptic digest / catalog-shape error. 0.7.1 adds
 an explicit guard:
 
-- The server advertises its versions — `GET /api/v1/version` (`{api, marketplace, format, compiler}`)
-  plus `X-Marketplace-Version` / `X-Format-Version` / `X-API-Version` response headers on **every**
+- The server advertises its versions — `GET /api/v1/version` (`{api, registry, format, compiler}`)
+  plus `X-Registry-Version` / `X-Format-Version` / `X-API-Version` response headers on **every**
   response — and the client sends its own versions as request headers.
 - Before publish/import/download, the client calls `assert_compatible()`: it fetches the server's
   versions and raises `VersionMismatchError` (HTTP 409) with an actionable message when the API
   version or the `just-dna-format` contract can't interoperate. Contract rule: same MAJOR, and while
   `0.x` also the same MINOR (a 0.x minor moves the parquet schema / `artifact.digest` — exactly the
-  0.2→0.3 case). A differing marketplace *app* version is **not** fatal (the API is path-versioned).
+  0.2→0.3 case). A differing registry *app* version is **not** fatal (the API is path-versioned).
 - A pre-0.7.1 server (no `/version`) can't be checked, so the guard warns and proceeds.
-  `MARKETPLACE_SKIP_VERSION_CHECK=1` (or `MarketplaceClient(check_version=False)`) is the escape
-  hatch; `marketplace-client version` prints both sides and the verdict. Logic in `version.py`.
+  `REGISTRY_SKIP_VERSION_CHECK=1` (or `RegistryClient(check_version=False)`) is the escape
+  hatch; `registry-client version` prints both sides and the verdict. Logic in `version.py`.
 
-## Next marketplace version (post-0.7)
+## Next registry version (post-0.7)
 
 - **Retire Eliot → stdlib `logging`.** Rewire the Eliot usage — `start_action` in
   `services/publish.py` and the Eliot→stdlib bridge in `logging_setup.py` — onto the standard-library
   `logging` system logger, and drop the `eliot` dependency from `pyproject.toml`. The
-  `just-dna-format` packages already use only stdlib `logging`; this aligns the marketplace with them
+  `just-dna-format` packages already use only stdlib `logging`; this aligns the registry with them
   and with the CLAUDE.md logging standard. (Was bundled with the format-0.3 adoption; that shipped in
   0.7 without touching logging, so this is now a standalone task.)
 
@@ -329,4 +329,4 @@ an explicit guard:
   namespace → `403`.
 - **End-to-end (MVP done):** publish a fixture spec → appears in `GET /modules` with correct stats →
   download in a second client → `verify_manifest` passes → tamper one byte → verification detects the
-  digest mismatch. Run the API with `uv run uvicorn just_dna_marketplace.api.app:app`.
+  digest mismatch. Run the API with `uv run uvicorn just_dna_registry.api.app:app`.

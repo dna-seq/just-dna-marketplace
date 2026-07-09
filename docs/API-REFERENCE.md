@@ -1,9 +1,9 @@
-# just-dna-marketplace — REST API Reference
+# just-dna-registry — REST API Reference
 
-Exhaustive reference for the marketplace HTTP API (v1). For the design rationale see
+Exhaustive reference for the registry HTTP API (v1). For the design rationale see
 [SPEC.md](SPEC.md); for the reference client see [CLIENT.md](CLIENT.md).
 
-- **Base URL:** `https://module-marketplace.just-dna.life`
+- **Base URL:** `https://module-registry.just-dna.life`
 - **API prefix:** `/api/v1` (health lives at the root, `/health`)
 - **Interactive docs:** `/docs` (Swagger UI), `/openapi.json`
 - **Content types:** responses are JSON unless noted; publish/import use `multipart/form-data`;
@@ -17,7 +17,7 @@ Static API keys via a bearer header:
 Authorization: Bearer mk_live_…
 ```
 
-Keys are minted server-side with `marketplace issue-key <account> -n <namespace>` (or self-service
+Keys are minted server-side with `registry issue-key <account> -n <namespace>` (or self-service
 via `POST /auth/register`). A key's account owns one or more **namespaces**; publishing/yanking
 under a namespace requires ownership. **Reads are anonymous;** only publish, import, yank, and
 `whoami` require a token.
@@ -106,7 +106,7 @@ see below), `sort` = `name` (default) | `downloads` | `recent` | `stars` | `popu
 **`group`** is a server-defined tab preset over the raw filters (a group wins over the equivalent
 `sort`/`featured`): `all` (everything), `featured` (`featured=true`), `curated` (has an
 owner-highlighted review — see reviews), `popular` (`sort=popular`), `new` (`sort=recent`), `test`. **Test/sandbox namespaces** — those matching the server-config
-`MARKETPLACE_TEST_NAMESPACE_PATTERN` (default `^(sandbox|test)([-_]|$)`) — are surfaced **only** under
+`REGISTRY_TEST_NAMESPACE_PATTERN` (default `^(sandbox|test)([-_]|$)`) — are surfaced **only** under
 `group=test` and hidden from every other tab and the default listing; they stay reachable by an
 explicit `namespace=`. Membership is server-owned so all clients agree. Discover the tabs at
 `GET /api/v1/modules/groups`.
@@ -214,7 +214,7 @@ Publish a new version. `multipart/form-data`:
   names are honored (`logs/reviewer.log`).
 
 Flow: ownership → version format → immutability → `validate_spec` → `compile_module`
-(`compiled_by="marketplace-server"`) → fill marketplace fields → store (version-scoped) → index.
+(`compiled_by="marketplace-server"`) → fill registry fields → store (version-scoped) → index.
 The spec's `module.name` must equal the path `{name}` (`422 name_mismatch`).
 
 `201 →` the full `ModuleManifest`. Errors: `401`, `403 not_namespace_member`,
@@ -255,7 +255,7 @@ to `icon`/`icon_set` when a module ships none.
 
 ### 21. `GET /api/v1/pubkey`
 The server's Ed25519 **public key** for verifying signed manifests (SPEC §5). `200 → {"algorithm":
-"ed25519", "public_key": "<base64>"}` when the server is configured to sign (`MARKETPLACE_SIGNING_KEY`
+"ed25519", "public_key": "<base64>"}` when the server is configured to sign (`REGISTRY_SIGNING_KEY`
 set); `404 signing_not_configured` otherwise. Pin this key and pass it to the client's verify step to
 defend against a compromised storage backend. Signed versions are flagged `signed: true` in the
 versions list; the `revalidate` audit flags contract-drifted versions `needs_upgrade: true`.
@@ -301,7 +301,7 @@ Revoke an account's access to a namespace — removes the membership row. **Owne
 **namespace-scoped**, not a global API-key revocation: the account keeps its key and any other
 namespaces. `200 → {"namespace","members":[…]}`. Errors: `401`, `403 not_namespace_owner`,
 `404 account_not_found` / `404 not_a_member`, `409 last_owner` (cannot remove a namespace's only
-owner). Global key/account revocation stays an ops-CLI action (`marketplace revoke-key` /
+owner). Global key/account revocation stays an ops-CLI action (`registry revoke-key` /
 `revoke-account`).
 
 ### 13. `GET` / `PATCH /api/v1/auth/whoami`  *(bearer)*
@@ -313,7 +313,7 @@ token.
 
 `PATCH` edits the caller's own profile — body `{"email"?, "display_name"?, "avatar_url"?}` (omitted
 fields unchanged, `""` clears a field). Returns the updated identity. `type` is **not** self-editable
-(set at account creation via `marketplace issue-key --type`). Errors: `401`, `422` (bad email /
+(set at account creation via `registry issue-key --type`). Errors: `401`, `422` (bad email /
 non-http(s) avatar_url), `409 email_taken` (another account already uses that email).
 
 ### 18. `POST /api/v1/auth/tokens`

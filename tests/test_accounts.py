@@ -3,7 +3,7 @@ account primitive. Auth stays token-based; email is private (returned only from 
 
 from fastapi.testclient import TestClient
 
-from just_dna_marketplace.db.repository import Repository
+from just_dna_registry.db.repository import Repository
 
 _WHOAMI = "/api/v1/auth/whoami"
 

@@ -1,7 +1,7 @@
 """
 Online PMID existence check via NCBI E-utilities (the "curl validator").
 
-This is a **marketplace ops** helper, invoked from the `revalidate --check-pmids` CLI — it makes a
+This is a **registry ops** helper, invoked from the `revalidate --check-pmids` CLI — it makes a
 network call, so it deliberately lives here and NOT in `just-dna-format` (the contract libs are
 strictly offline). `just-dna-format` does the cheap regex (`extract_pmids`); confirming a PMID
 actually resolves is an upgrade/authoring-time gate.
