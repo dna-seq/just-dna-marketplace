@@ -285,36 +285,53 @@ any number may be highlighted. A highlighted review is what `?group=curated` and
 `404 review_not_found` (highlight) / `version_not_found`.
 
 ### 24. `GET /api/v1/namespaces/{ns}/members`  *(bearer)*
-List a namespace's members. Any **member** (owner or contributor) may read. `200 → {"namespace":
-"…", "members": [{"account": "alice", "role": "owner"}, {"account": "bob", "role": "contributor"}]}`.
-Errors: `401`, `403 not_namespace_member`.
+List a namespace's members. Any member may read. `200 → {"namespace": "…", "members": [{"account":
+"alice", "role": "owner"}, {"account": "bob", "role": "member"}]}`. Errors: `401`,
+`403 insufficient_capability`.
 
-### 25. `POST /api/v1/namespaces/{ns}/members`  *(bearer — owner)*
-Add or promote an account in a namespace. **Owner-only.** Body `{"account": "bob", "role":
-"contributor"}` (`role` = `owner` | `contributor`, default `contributor`; re-posting an existing
-member updates the role). Both roles can publish/amend/yank; only owners manage membership.
-`201 → {"namespace","members":[…]}` (the updated roster). Errors: `401`, `403 not_namespace_owner`,
-`404 account_not_found`, `422 invalid_role`.
+### 25. `POST /api/v1/namespaces/{ns}/members`  *(bearer — admin+)*
+Add or re-role an account. Body `{"account": "bob", "role": "member"}` (`role` = `owner` | `admin` |
+`member`, default `member`; re-posting updates the role). Adding a `member` needs **admin+**
+(manage-members); granting `admin`/`owner` needs **owner** (manage-roles). `201 →
+{"namespace","members":[…]}`. Errors: `401`, `403 insufficient_capability`, `404 account_not_found`,
+`422 invalid_role`.
 
-### 26. `DELETE /api/v1/namespaces/{ns}/members/{account}`  *(bearer — owner)*
-Revoke an account's access to a namespace — removes the membership row. **Owner-only.** This is
+### 26. `DELETE /api/v1/namespaces/{ns}/members/{account}`  *(bearer — admin+)*
+Revoke an account's namespace membership. **Admin+**; removing an **owner** needs **owner**. This is
 **namespace-scoped**, not a global API-key revocation: the account keeps its key and any other
-namespaces. `200 → {"namespace","members":[…]}`. Errors: `401`, `403 not_namespace_owner`,
+namespaces. `200 → {"namespace","members":[…]}`. Errors: `401`, `403 insufficient_capability`,
 `404 account_not_found` / `404 not_a_member`, `409 last_owner` (cannot remove a namespace's only
 owner). Global key/account revocation stays an ops-CLI action (`registry revoke-key` /
 `revoke-account`).
 
-### 13. `GET` / `PATCH /api/v1/auth/whoami`  *(bearer)*
-`GET 200 → {"account": "antonkulaga", "namespaces": ["just-dna-seq"], "type": "user",
-"display_name": null, "avatar_url": null, "email": null}` — `namespaces` is every namespace the
-caller is a member of (owner or contributor); `type` is the `user`|`org` discriminator; `avatar_url`
-is the public userpic; `email` is **private** (only ever returned here). `401` on missing/invalid
-token.
+### 30–35. Orgs  *(bearer)*
+An **org** is a `type='org'` account that owns namespaces and has members whose role cascades to
+every namespace the org owns. Roles are `owner|admin|member` (same capabilities as namespace roles).
+- `POST /api/v1/orgs` — `{"name": "acme"}` creates the org and seeds the caller as `owner`.
+  `201 → {"org","owner"}`. Errors `422 invalid_org_name`, `409 name_taken`.
+- `GET /api/v1/orgs/{org}/members` — any org member. `200 → {"org","members":[{account,role}]}`.
+- `POST /api/v1/orgs/{org}/members` — add/re-role (admin+; granting admin/owner needs owner).
+  `{"account","role"}`. `201 → OrgMemberList`.
+- `PUT /api/v1/orgs/{org}/members/{member}/role` — `{"role"}` (owner-only; won't demote the last
+  owner → `409 last_owner`).
+- `DELETE /api/v1/orgs/{org}/members/{member}` — admin+ (removing an owner needs owner; last-owner
+  guarded).
+- `PATCH /api/v1/orgs/{org}/settings` — owner-only; body `{"funding_url"?, "display_name"?,
+  "avatar_url"?, "email"?}` (edits the org account's profile).
+- `POST /api/v1/orgs/{org}/namespaces` — `{"namespace"}` claims a namespace **owned by the org**
+  (admin+; access flows via the cascade, no personal member row). `201 → {"namespace","org"}`.
+All org gate failures return `403 insufficient_capability`; unknown org → `404 org_not_found`.
 
-`PATCH` edits the caller's own profile — body `{"email"?, "display_name"?, "avatar_url"?}` (omitted
-fields unchanged, `""` clears a field). Returns the updated identity. `type` is **not** self-editable
-(set at account creation via `registry issue-key --type`). Errors: `401`, `422` (bad email /
-non-http(s) avatar_url), `409 email_taken` (another account already uses that email).
+### 13. `GET` / `PATCH /api/v1/auth/whoami`  *(bearer)*
+`GET 200 → {"account": "antonkulaga", "namespaces": [...], "type": "user", "display_name": null,
+"avatar_url": null, "funding_url": null, "email": null}` — `namespaces` is every namespace the caller
+is a member of; `type` is the `user`|`org` discriminator; `avatar_url`/`funding_url` are public
+(userpic + donation link); `email` is **private** (only ever returned here). `401` on invalid token.
+
+`PATCH` edits the caller's own profile — body `{"email"?, "display_name"?, "avatar_url"?,
+"funding_url"?}` (omitted fields unchanged, `""` clears a field). Returns the updated identity.
+`type` is **not** self-editable. Errors: `401`, `422` (bad email / non-http(s) url), `409
+email_taken`.
 
 ### 18. `POST /api/v1/auth/tokens`
 Optional JWT session. Body `{"api_key": "mk_live_…"}`. `200 → {"token": "<jwt>", "token_type":
@@ -355,11 +372,12 @@ digests are already in each module's `manifest.json`, so no client-side hashing.
 ### ModuleCard
 `namespace, name, title, description, icon, icon_set, color, logo_url, latest_version, genome_build,
 license, owner, stats: CardStats, downloads, stars, views, created_at, updated_at, starred_by_me,
-featured, review_count, avg_rating, curated`. `stars`/`views` are counters; `starred_by_me` is true
-only when the request carried a bearer for an account that starred the module; `created_at` is the
-first-publish time, `updated_at` advances on every republish. `review_count`/`avg_rating` (null when
-unreviewed) aggregate reviews across versions; `curated` is true when the owner has highlighted at
-least one review.
+featured, review_count, avg_rating, curated, author_funding_url, org_funding_url`. `stars`/`views`
+are counters; `starred_by_me` is true only when the request carried a bearer for an account that
+starred the module; `created_at` is the first-publish time, `updated_at` advances on every republish.
+`review_count`/`avg_rating` (null when unreviewed) aggregate reviews across versions; `curated` is
+true when someone with curate rights highlighted a review. `author_funding_url` is the latest
+version's author's donation link; `org_funding_url` is the owning org's (both null when unset).
 
 ### Review
 `reviewer, version, rating (1-5), verdict (verified|concerns|rejected | null), notes, highlighted,
@@ -379,10 +397,19 @@ changelog, manifest_url`. `downloads` is the per-version download count.
 ### WhoAmI
 `account: string` (handle), `namespaces: string[]` (every namespace the account is a member of),
 `type: "user"|"org"`, `display_name: string|null`, `avatar_url: string|null` (public userpic),
-`email: string|null` (private — only returned to the account itself).
+`funding_url: string|null` (public donation link), `email: string|null` (private — only returned to
+the account itself).
 
-### MemberList
-`namespace: string, members: [{account: string, role: "owner"|"contributor"}]`.
+### MemberList / OrgMemberList
+`{namespace|org: string, members: [{account: string, role: "owner"|"admin"|"member"}]}`. Roles are
+hierarchical (owner ⊃ admin ⊃ member).
+
+### Roles & capabilities
+Effective role on a namespace = the highest of the caller's explicit `namespace_members` grant and —
+when the namespace is org-owned — their `org_members` role (cascade). Capabilities: **member** =
+publish + amend/yank *own* versions; **admin** = + amend/yank *any* + manage namespaces/members +
+curate reviews; **owner** = + assign roles + edit settings (incl. funding). `*_own` vs `*_any` is
+resolved by `versions.published_by`; a 403 carries `detail: "insufficient_capability"`.
 
 ### StarStatus
 `namespace: string, name: string, stars: int, starred_by_me: bool`.

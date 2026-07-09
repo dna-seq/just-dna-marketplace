@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS versions (
     downloads       INTEGER NOT NULL DEFAULT 0,
     changelog       TEXT NOT NULL DEFAULT '',
     created_at      TEXT NOT NULL DEFAULT '',
+    published_by    INTEGER REFERENCES accounts(id),   -- authoring account (RBAC own-scoping + funding)
     UNIQUE(module_id, version)
 );
 
@@ -83,8 +84,18 @@ CREATE TABLE IF NOT EXISTS module_stars (
 CREATE TABLE IF NOT EXISTS namespace_members (
     namespace  TEXT NOT NULL,
     account_id INTEGER NOT NULL REFERENCES accounts(id),
-    role       TEXT NOT NULL DEFAULT 'contributor',
+    role       TEXT NOT NULL DEFAULT 'member',   -- owner|admin|member (0.9.0; was owner|contributor)
     PRIMARY KEY (namespace, account_id)
+);
+
+-- Org membership (0.9.0): a user's role in an org account (type='org'). Cascades to every namespace
+-- the org owns. Effective namespace role = highest of {this cascade, an explicit namespace_members
+-- grant}. `org_id` must be a type='org' account (app-enforced, matching the codebase's no-CHECK style).
+CREATE TABLE IF NOT EXISTS org_members (
+    org_id     INTEGER NOT NULL REFERENCES accounts(id),
+    account_id INTEGER NOT NULL REFERENCES accounts(id),
+    role       TEXT NOT NULL DEFAULT 'member',   -- owner|admin|member
+    PRIMARY KEY (org_id, account_id)
 );
 
 -- Reviews/audits (0.8.0): registry-layer social data ABOUT a published version — never part of
@@ -109,6 +120,7 @@ CREATE INDEX IF NOT EXISTS idx_versions_module ON versions(module_id);
 CREATE INDEX IF NOT EXISTS idx_version_genes ON version_genes(gene);
 CREATE INDEX IF NOT EXISTS idx_version_categories ON version_categories(category);
 CREATE INDEX IF NOT EXISTS idx_namespace_members_account ON namespace_members(account_id);
+CREATE INDEX IF NOT EXISTS idx_org_members_account ON org_members(account_id);
 CREATE INDEX IF NOT EXISTS idx_reviews_module ON reviews(module_id);
 """
 
@@ -147,6 +159,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE accounts ADD COLUMN avatar_url TEXT")  # userpic (public, http(s))
     if "type" not in acct_cols:
         conn.execute("ALTER TABLE accounts ADD COLUMN type TEXT NOT NULL DEFAULT 'user'")
+    if "funding_url" not in acct_cols:
+        # Donation/funding link (0.9.0), public http(s). Used for both an author's and an org's
+        # link (same column, different account rows). Surfaced on module cards.
+        conn.execute("ALTER TABLE accounts ADD COLUMN funding_url TEXT")
     # One account per install-id / per email (NULLs are exempt — admin-made or profile-less accounts).
     conn.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_install_id "
@@ -181,6 +197,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE versions ADD COLUMN needs_upgrade INTEGER NOT NULL DEFAULT 0")
     if "downloads" not in ver_cols:  # 0.6.0 per-version download counter
         conn.execute("ALTER TABLE versions ADD COLUMN downloads INTEGER NOT NULL DEFAULT 0")
+    if "published_by" not in ver_cols:  # 0.9.0 authoring account (RBAC own-scoping + author funding)
+        conn.execute("ALTER TABLE versions ADD COLUMN published_by INTEGER REFERENCES accounts(id)")
 
     # 0.6.0 namespace membership: seed each existing single-owner namespace as an `owner` member,
     # so the new membership check (which supersedes single-owner) sees no disruption. Idempotent.
@@ -188,3 +206,6 @@ def _migrate(conn: sqlite3.Connection) -> None:
         "INSERT OR IGNORE INTO namespace_members(namespace, account_id, role) "
         "SELECT name, account_id, 'owner' FROM namespaces"
     )
+    # 0.9.0 RBAC role rename: contributor → member. Old contributors could amend/yank ANY version;
+    # `member` is own-only. Re-grant `admin` to preserve broad rights. Idempotent. See docs/UPGRADE.md.
+    conn.execute("UPDATE namespace_members SET role = 'member' WHERE role = 'contributor'")

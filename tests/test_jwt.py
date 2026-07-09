@@ -43,7 +43,8 @@ def test_jwt_exchange_and_accept(tmp_path: Path) -> None:
     who = client.get("/api/v1/auth/whoami", headers=_auth(jwt_token)).json()
     assert who == {
         "account": "alice", "namespaces": ["alice"],
-        "type": "user", "display_name": None, "avatar_url": None, "email": None,
+        "type": "user", "display_name": None, "avatar_url": None,
+        "funding_url": None, "email": None,
     }
 
     # Bad key can't mint; garbage bearer is rejected.

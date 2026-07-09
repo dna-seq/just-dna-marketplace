@@ -16,6 +16,7 @@ from just_dna_registry.config import Settings, get_settings
 from just_dna_registry.db.repository import Repository
 from just_dna_registry.db.schema import connect, init_db
 from just_dna_registry.models.api import VALID_ACCOUNT_TYPES
+from just_dna_registry.permissions import VALID_NS_ROLES, VALID_ORG_ROLES
 from just_dna_registry.services.pmid_check import verify_pmids
 from just_dna_registry.services.revalidate import gather_pmids, revalidate_version
 from just_dna_registry.services.upgrade import (
@@ -139,11 +140,11 @@ def reset_db(
 def add_member(
     namespace: str,
     account: str,
-    role: str = typer.Option("contributor", "--role", "-r", help="owner | contributor"),
+    role: str = typer.Option("member", "--role", "-r", help="owner | admin | member"),
 ) -> None:
-    """Add or promote an account in a namespace (ops). Both roles publish; only owners manage."""
-    if role not in ("owner", "contributor"):
-        raise typer.BadParameter("role must be 'owner' or 'contributor'")
+    """Add or re-role an account in a namespace (ops)."""
+    if role not in VALID_NS_ROLES:
+        raise typer.BadParameter(f"role must be one of {sorted(VALID_NS_ROLES)}")
     settings = get_settings()
     repo = Repository(connect(settings.db_path))
     if repo.namespace_owner(namespace) is None:
@@ -190,6 +191,91 @@ def list_members(namespace: str) -> None:
         return
     for m in members:
         typer.echo(f"  {m['role']:<12} {m['account']}")
+
+
+# ── Orgs + funding (0.9.0) ───────────────────────────────────────────────────
+
+def _require_org(repo: Repository, org: str) -> int:
+    row = repo.account_by_name(org)
+    if row is None or repo.account_type(int(row["id"])) != "org":
+        typer.echo(f"org not found (or not type=org): {org}")
+        raise typer.Exit(code=1)
+    return int(row["id"])
+
+
+@app.command("create-org")
+def create_org(name: str) -> None:
+    """Create an org account (ops). Add members with `add-org-member`."""
+    settings = get_settings()
+    repo = Repository(connect(settings.db_path))
+    if repo.account_by_name(name) is not None:
+        typer.echo(f"name already taken: {name}")
+        raise typer.Exit(code=1)
+    org_id = repo.create_account(name)
+    repo.set_account_type(org_id, "org")
+    typer.echo(f"created org: {name}")
+
+
+@app.command("add-org-member")
+def add_org_member(
+    org: str,
+    account: str,
+    role: str = typer.Option("member", "--role", "-r", help="owner | admin | member"),
+) -> None:
+    """Add or re-role an org member (ops)."""
+    if role not in VALID_ORG_ROLES:
+        raise typer.BadParameter(f"role must be one of {sorted(VALID_ORG_ROLES)}")
+    settings = get_settings()
+    repo = Repository(connect(settings.db_path))
+    org_id = _require_org(repo, org)
+    row = repo.account_by_name(account)
+    if row is None:
+        typer.echo(f"account not found: {account}")
+        raise typer.Exit(code=1)
+    repo.add_org_member(org_id, int(row["id"]), role)
+    typer.echo(f"{org}: {account} is now {role}")
+
+
+@app.command("remove-org-member")
+def remove_org_member(org: str, account: str) -> None:
+    """Remove an org member (ops). Refuses to remove the last owner."""
+    settings = get_settings()
+    repo = Repository(connect(settings.db_path))
+    org_id = _require_org(repo, org)
+    row = repo.account_by_name(account)
+    if row is None:
+        typer.echo(f"account not found: {account}")
+        raise typer.Exit(code=1)
+    if repo.org_role(org_id, int(row["id"])) == "owner" and repo.count_org_owners(org_id) <= 1:
+        typer.echo(f"refusing to remove the last owner of {org}")
+        raise typer.Exit(code=1)
+    if not repo.remove_org_member(org_id, int(row["id"])):
+        typer.echo(f"{account} is not a member of {org}")
+        raise typer.Exit(code=1)
+    typer.echo(f"{org}: removed {account}")
+
+
+@app.command("list-org-members")
+def list_org_members(org: str) -> None:
+    """List an org's members and their roles (ops)."""
+    settings = get_settings()
+    repo = Repository(connect(settings.db_path))
+    org_id = _require_org(repo, org)
+    for m in repo.list_org_members(org_id):
+        typer.echo(f"  {m['role']:<12} {m['account']}")
+
+
+@app.command("set-funding")
+def set_funding(account: str, url: str = typer.Argument(..., help="Donation link ('' clears)")) -> None:
+    """Set (or clear) an account's or org's public funding/donation link (ops)."""
+    settings = get_settings()
+    repo = Repository(connect(settings.db_path))
+    row = repo.account_by_name(account)
+    if row is None:
+        typer.echo(f"account not found: {account}")
+        raise typer.Exit(code=1)
+    repo.set_account_profile(int(row["id"]), funding_url=url)
+    typer.echo(f"{account}: funding_url {'cleared' if url == '' else 'set'}")
 
 
 @app.command("remove-module")

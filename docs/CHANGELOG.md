@@ -14,6 +14,25 @@ npm/PyPI/Docker), and the app-store-style *one-click-install UI* is the **Store*
 (`WEBUI-STORE.md`), not this backend. Hard rename (no compat aliases — nothing hardwired it yet).
 
 ### Added
+- **Org accounts + fine-grained RBAC.** A `type='org'` account is now a first-class entity with
+  members (`org_members`) whose role cascades to every namespace the org owns. Roles are
+  hierarchical **owner ⊃ admin ⊃ member** (was owner/contributor), assignable at the org level
+  *and* per-namespace; the effective role on a namespace is the highest of the two. Capability model
+  (`permissions.py`): member = publish + amend/yank **own**; admin = + amend/yank **any** + manage
+  namespaces/members + curate; owner = + assign roles + settings. Gates are now a single live
+  `require_capability` resolver. New endpoints: `POST /orgs`, `GET/POST/DELETE /orgs/{org}/members`,
+  `PUT /orgs/{org}/members/{m}/role`, `PATCH /orgs/{org}/settings`, `POST /orgs/{org}/namespaces`;
+  CLI `create-org` / `{add,remove,list}-org-member` / `set-funding`; client `create_org`,
+  `org_members`, `add_org_member`, `set_org_role`, `remove_org_member`, `update_org_settings`,
+  `create_org_namespace`.
+- **Per-version author tracking** (`versions.published_by`), captured at publish — drives own-scoping
+  and the author funding link.
+- **Donation / funding links.** `accounts.funding_url` (public http(s)) on both user and org
+  accounts; settable via `PATCH /auth/whoami` (+ `issue-key`/`set-funding`) and `PATCH
+  /orgs/{org}/settings`. Module cards/detail surface **two** links: `author_funding_url` (the latest
+  version's author) and `org_funding_url` (the owning org).
+- **Fixed the amend/logo/yank gap:** these said "Owner-only" but only required membership; they are
+  now capability-gated (own for a member, any for admin+).
 - **Admin ops for keys + reset.** `registry export-keys [-o file]` / `registry import-keys <file>`
   dump/restore the auth graph (accounts + API keys + namespaces + memberships) — for backup or a
   preprod→prod migration (the export holds live tokens; keep it secret). `registry reset-db`
@@ -23,6 +42,10 @@ npm/PyPI/Docker), and the app-store-style *one-click-install UI* is the **Store*
   the DB — copy it directly to reuse across envs; `reset-db` leaves it alone.
 
 ### Changed
+- **RBAC role rename `contributor` → `member`** (migrated in place). ⚠️ **Tightening:** an old
+  contributor could amend/yank *any* version; a `member` is own-only. Re-grant `admin` to preserve
+  broad rights. Versions published before 0.9.0 have no recorded author, so only admin+ can
+  amend/yank them.
 - Package `just-dna-registry`; module `just_dna_registry`; CLIs `registry` / `registry-client`;
   env vars `REGISTRY_*`; client class `RegistryClient` (+ `RegistryError`); version headers
   `X-Registry-*` and the `/version` field `registry`; discovery scheme `registry://`.

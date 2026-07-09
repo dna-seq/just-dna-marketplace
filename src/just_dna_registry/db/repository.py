@@ -76,17 +76,22 @@ class Repository:
         )
         self.conn.commit()
 
-    def add_namespace(self, name: str, account_id: int) -> None:
-        """Claim a namespace for an account (the founding owner) and seed its owner membership."""
+    def add_namespace(self, name: str, account_id: int, *, seed_owner: bool = True) -> None:
+        """Claim a namespace for an account (`account_id` = owning account, user or org).
+
+        With `seed_owner` (personal namespaces) also seed an `owner` `namespace_members` row so the
+        user has a direct grant. For org-owned namespaces pass `seed_owner=False`: the org account
+        isn't a person, and access flows through the org-role cascade instead."""
         self.conn.execute(
             "INSERT OR REPLACE INTO namespaces(name, account_id) VALUES (?, ?)",
             (name, account_id),
         )
-        self.conn.execute(
-            "INSERT OR IGNORE INTO namespace_members(namespace, account_id, role) "
-            "VALUES (?, ?, 'owner')",
-            (name, account_id),
-        )
+        if seed_owner:
+            self.conn.execute(
+                "INSERT OR IGNORE INTO namespace_members(namespace, account_id, role) "
+                "VALUES (?, ?, 'owner')",
+                (name, account_id),
+            )
         self.conn.commit()
 
     def account_for_key(self, key: str) -> Optional[sqlite3.Row]:
@@ -97,11 +102,19 @@ class Repository:
         ).fetchone()
 
     def get_account(self, account_id: int) -> Optional[sqlite3.Row]:
-        """Full account row incl. the 0.8.x profile fields (email/display_name/avatar_url/type)."""
+        """Full account row incl. the profile fields (email/display_name/avatar_url/funding_url/type)."""
         return self.conn.execute(
-            "SELECT id, name, email, display_name, avatar_url, type FROM accounts WHERE id = ?",
+            "SELECT id, name, email, display_name, avatar_url, funding_url, type "
+            "FROM accounts WHERE id = ?",
             (account_id,),
         ).fetchone()
+
+    def account_type(self, account_id: int) -> Optional[str]:
+        """The account's `user`/`org` discriminator (drives the org-role cascade)."""
+        row = self.conn.execute(
+            "SELECT type FROM accounts WHERE id = ?", (account_id,)
+        ).fetchone()
+        return row["type"] if row else None
 
     def set_account_profile(
         self,
@@ -110,15 +123,17 @@ class Repository:
         email: Optional[str] = None,
         display_name: Optional[str] = None,
         avatar_url: Optional[str] = None,
+        funding_url: Optional[str] = None,
     ) -> None:
         """Self-service profile update. Only the fields passed are changed; an empty string clears a
-        field to NULL (so a user can remove an email/name/userpic)."""
+        field to NULL (so a user can remove an email/name/userpic/funding link)."""
         sets: list[str] = []
         params: list[Any] = []
         for column, value in (
             ("email", email),
             ("display_name", display_name),
             ("avatar_url", avatar_url),
+            ("funding_url", funding_url),
         ):
             if value is not None:
                 sets.append(f"{column} = ?")
@@ -152,7 +167,8 @@ class Repository:
     # ── Namespace membership (0.6.0) ─────────────────────────────────────────
 
     def namespace_role(self, namespace: str, account_id: int) -> Optional[str]:
-        """The account's role in the namespace (`owner`/`contributor`), or None if not a member."""
+        """The account's explicit role in the namespace (`owner`/`admin`/`member`), or None. This is
+        the per-namespace grant only; the effective role also folds in org cascade (see deps)."""
         row = self.conn.execute(
             "SELECT role FROM namespace_members WHERE namespace = ? AND account_id = ?",
             (namespace, account_id),
@@ -194,6 +210,78 @@ class Repository:
         ).fetchone()
         return int(row["n"])
 
+    # ── Org membership (0.9.0) ───────────────────────────────────────────────
+
+    def org_role(self, org_id: int, account_id: int) -> Optional[str]:
+        """The account's role in the org (`owner`/`admin`/`member`), or None if not a member."""
+        row = self.conn.execute(
+            "SELECT role FROM org_members WHERE org_id = ? AND account_id = ?",
+            (org_id, account_id),
+        ).fetchone()
+        return row["role"] if row else None
+
+    def add_org_member(self, org_id: int, account_id: int, role: str) -> None:
+        """Add or re-role a member of an org (upsert)."""
+        self.conn.execute(
+            "INSERT INTO org_members(org_id, account_id, role) VALUES (?, ?, ?) "
+            "ON CONFLICT(org_id, account_id) DO UPDATE SET role = excluded.role",
+            (org_id, account_id, role),
+        )
+        self.conn.commit()
+
+    def remove_org_member(self, org_id: int, account_id: int) -> bool:
+        """Remove an org member. Returns True if a row was removed."""
+        cur = self.conn.execute(
+            "DELETE FROM org_members WHERE org_id = ? AND account_id = ?", (org_id, account_id)
+        )
+        self.conn.commit()
+        return cur.rowcount > 0
+
+    def list_org_members(self, org_id: int) -> list[sqlite3.Row]:
+        """All members of an org as `(account, role)`, owners first then by name."""
+        return self.conn.execute(
+            "SELECT a.name AS account, m.role AS role FROM org_members m "
+            "JOIN accounts a ON a.id = m.account_id WHERE m.org_id = ? "
+            "ORDER BY (m.role = 'owner') DESC, (m.role = 'admin') DESC, a.name",
+            (org_id,),
+        ).fetchall()
+
+    def count_org_owners(self, org_id: int) -> int:
+        """How many owners an org has (guards against removing/demoting the last one)."""
+        row = self.conn.execute(
+            "SELECT count(*) AS n FROM org_members WHERE org_id = ? AND role = 'owner'", (org_id,)
+        ).fetchone()
+        return int(row["n"])
+
+    def version_author(self, namespace: str, name: str, version: str) -> Optional[int]:
+        """The account id that published a version (`published_by`), or None (unattributed/legacy)."""
+        row = self.conn.execute(
+            "SELECT v.published_by FROM versions v JOIN modules m ON m.id = v.module_id "
+            "WHERE m.namespace = ? AND m.name = ? AND v.version = ?",
+            (namespace, name, version),
+        ).fetchone()
+        return int(row["published_by"]) if row and row["published_by"] is not None else None
+
+    def funding_for_module(self, namespace: str, name: str) -> dict[str, Optional[str]]:
+        """The two funding links a module surfaces: the owning **org**'s (when the namespace is
+        org-owned) and the **author** of the latest non-yanked version. Either may be None."""
+        org = self.conn.execute(
+            "SELECT a.funding_url AS url FROM namespaces n JOIN accounts a ON a.id = n.account_id "
+            "WHERE n.name = ? AND a.type = 'org'",
+            (namespace,),
+        ).fetchone()
+        author = self.conn.execute(
+            "SELECT a.funding_url AS url FROM modules m "
+            "JOIN versions v ON v.module_id = m.id AND v.version = m.latest_version "
+            "JOIN accounts a ON a.id = v.published_by "
+            "WHERE m.namespace = ? AND m.name = ?",
+            (namespace, name),
+        ).fetchone()
+        return {
+            "org_funding_url": org["url"] if org else None,
+            "author_funding_url": author["url"] if author else None,
+        }
+
     # ── Lookups ─────────────────────────────────────────────────────────────
 
     def get_module_row(self, namespace: str, name: str) -> Optional[sqlite3.Row]:
@@ -231,11 +319,13 @@ class Repository:
 
         return {
             "accounts": rows(
-                "SELECT id, name, email, display_name, avatar_url, type, install_id FROM accounts"
+                "SELECT id, name, email, display_name, avatar_url, funding_url, type, install_id "
+                "FROM accounts"
             ),
             "api_keys": rows("SELECT key, account_id FROM api_keys"),
             "namespaces": rows("SELECT name, account_id, featured, blacklisted FROM namespaces"),
             "members": rows("SELECT namespace, account_id, role FROM namespace_members"),
+            "org_members": rows("SELECT org_id, account_id, role FROM org_members"),
         }
 
     def import_auth(self, data: dict[str, list[dict]]) -> dict[str, int]:
@@ -244,10 +334,10 @@ class Repository:
         or ignored (keys/members)."""
         for a in data.get("accounts", []):
             self.conn.execute(
-                "INSERT OR REPLACE INTO accounts(id, name, email, display_name, avatar_url, type, "
-                "install_id) VALUES (:id, :name, :email, :display_name, :avatar_url, "
-                ":type, :install_id)",
-                a,
+                "INSERT OR REPLACE INTO accounts(id, name, email, display_name, avatar_url, "
+                "funding_url, type, install_id) VALUES (:id, :name, :email, :display_name, "
+                ":avatar_url, :funding_url, :type, :install_id)",
+                {"funding_url": None, **a},  # tolerate exports made before funding_url existed
             )
         for k in data.get("api_keys", []):
             self.conn.execute(
@@ -265,8 +355,17 @@ class Repository:
                 "VALUES (:namespace, :account_id, :role)",
                 m,
             )
+        for om in data.get("org_members", []):
+            self.conn.execute(
+                "INSERT OR IGNORE INTO org_members(org_id, account_id, role) "
+                "VALUES (:org_id, :account_id, :role)",
+                om,
+            )
         self.conn.commit()
-        return {key: len(data.get(key, [])) for key in ("accounts", "api_keys", "namespaces", "members")}
+        return {
+            key: len(data.get(key, []))
+            for key in ("accounts", "api_keys", "namespaces", "members", "org_members")
+        }
 
     def reset_catalog(self, *, keep_auth: bool = True) -> None:
         """Wipe the catalog projection (modules/versions/facets/stars/reviews). The auth graph
@@ -277,7 +376,7 @@ class Repository:
         for table in catalog:
             self.conn.execute(f"DELETE FROM {table}")
         if not keep_auth:
-            for table in ("namespace_members", "api_keys", "namespaces", "accounts"):
+            for table in ("org_members", "namespace_members", "api_keys", "namespaces", "accounts"):
                 self.conn.execute(f"DELETE FROM {table}")
         self.conn.commit()
 
@@ -377,16 +476,22 @@ class Repository:
         return int(existing["id"])
 
     def insert_version(
-        self, module_id: int, manifest: ModuleManifest, changelog: str, created_at: str
+        self,
+        module_id: int,
+        manifest: ModuleManifest,
+        changelog: str,
+        created_at: str,
+        published_by: Optional[int] = None,
     ) -> int:
-        """Insert a version row + facet rows from a manifest. Returns version id."""
+        """Insert a version row + facet rows from a manifest. Returns version id. `published_by` is
+        the authoring account (drives RBAC own-scoping + author funding); None for legacy imports."""
         cur = self.conn.execute(
             "INSERT INTO versions(module_id, version, digest, manifest_json, "
-            "compile_success, yanked, changelog, created_at) VALUES (?,?,?,?,?,0,?,?)",
+            "compile_success, yanked, changelog, created_at, published_by) VALUES (?,?,?,?,?,0,?,?,?)",
             (
                 module_id, manifest.identity.version, manifest.artifact.digest,
                 manifest.model_dump_json(), int(manifest.compilation.compile_success),
-                changelog, created_at,
+                changelog, created_at, published_by,
             ),
         )
         version_id = int(cur.lastrowid)

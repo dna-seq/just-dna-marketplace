@@ -18,10 +18,11 @@ from just_dna_registry.api.deps import (
     optional_account,
     rate_limit,
     require_account,
-    require_namespace_owner,
+    require_capability,
 )
 from just_dna_registry.db.repository import Repository
 from just_dna_registry.models.api import Review, ReviewRequest
+from just_dna_registry.permissions import Capability
 from just_dna_registry.services.ingest import now_iso
 
 router = APIRouter(prefix="/modules", tags=["reviews"])
@@ -114,8 +115,8 @@ def highlight_review(
     repo: RepoDep, account: AccountDep, namespace: str, name: str, version: str, reviewer: str
 ) -> list[Review]:
     """Highlight a reviewer's review (SO accepted-answer style) — the signal the `curated` tab keys
-    on. Namespace **owner** only. `the more the merrier`: any number may be highlighted."""
-    require_namespace_owner(repo, account, namespace)
+    on. Requires the `curate` capability (admin+). `the more the merrier`: any number may be highlighted."""
+    require_capability(repo, account, namespace, Capability.CURATE)
     module_id = _require_version(repo, namespace, name, version)
     target = repo.account_by_name(reviewer)
     if target is None or not repo.set_review_highlight(module_id, version, int(target["id"]), True):
@@ -130,8 +131,8 @@ def highlight_review(
 def unhighlight_review(
     repo: RepoDep, account: AccountDep, namespace: str, name: str, version: str, reviewer: str
 ) -> list[Review]:
-    """Remove the owner's highlight from a reviewer's review. Namespace owner only. Idempotent."""
-    require_namespace_owner(repo, account, namespace)
+    """Remove a highlight from a reviewer's review. Requires the `curate` capability (admin+). Idempotent."""
+    require_capability(repo, account, namespace, Capability.CURATE)
     module_id = _require_version(repo, namespace, name, version)
     target = repo.account_by_name(reviewer)
     if target is not None:

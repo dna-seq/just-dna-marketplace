@@ -21,10 +21,11 @@ from just_dna_registry.api.deps import (
     rate_limit,
     settings_dep,
     require_account,
-    require_namespace_member,
+    require_capability,
 )
 from just_dna_registry.config import Settings
 from just_dna_registry.db.repository import Repository
+from just_dna_registry.permissions import Capability
 from just_dna_registry.services import publish as publish_service
 from just_dna_registry.storage.base import StorageBackend
 
@@ -62,7 +63,7 @@ async def publish(
     changelog: Annotated[str, Form()] = "",
 ) -> dict:
     """Publish a new version: validate + server-side recompile the uploaded spec, then index it."""
-    require_namespace_member(account, namespace)
+    require_capability(repo, account, namespace, Capability.PUBLISH)
     if not is_valid_version(version):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail="invalid_version")
     if repo.version_exists(namespace, name, version):
@@ -82,6 +83,7 @@ async def publish(
             version=version,
             changelog=changelog,
             owner=account.name,
+            published_by=account.id,
             files=uploads,
         )
     except publish_service.PublishError as exc:
@@ -118,7 +120,7 @@ async def import_archive(
     A spec archive is recompiled directly; a legacy parquet-only archive is reverse-engineered
     with the client-supplied display metadata, then recompiled. Same guards as `publish`.
     """
-    require_namespace_member(account, namespace)
+    require_capability(repo, account, namespace, Capability.PUBLISH)
     if not is_valid_version(version):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail="invalid_version")
     if repo.version_exists(namespace, name, version):
@@ -136,6 +138,7 @@ async def import_archive(
             version=version,
             changelog=changelog,
             owner=account.name,
+            published_by=account.id,
             archive=data,
             display={
                 "title": title,
@@ -163,8 +166,12 @@ def amend_changelog(
     body: ChangelogPatch,
 ) -> dict:
     """Amend a published version's changelog. Metadata only — the artifact/digest are immutable
-    and untouched. Owner-only. `append=true` adds to the existing changelog."""
-    require_namespace_member(account, namespace)
+    and untouched. Requires amend rights (own version for a member; any for admin+). `append=true`
+    adds to the existing changelog."""
+    require_capability(
+        repo, account, namespace, Capability.AMEND_ANY,
+        resource_author=repo.version_author(namespace, name, version),
+    )
     current = repo.get_version_changelog(namespace, name, version)
     if current is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="version_not_found")
@@ -183,9 +190,13 @@ async def amend_logo(
     version: str,
     logo: Annotated[UploadFile, File()],
 ) -> dict:
-    """Replace a published version's logo (png/jpg/jpeg). Owner-only. Out-of-digest metadata: the
-    artifact/digest — and any signature over it — stay immutable, so no version bump is needed."""
-    require_namespace_member(account, namespace)
+    """Replace a published version's logo (png/jpg/jpeg). Requires amend rights (own version for a
+    member; any for admin+). Out-of-digest metadata: the artifact/digest — and any signature over
+    it — stay immutable, so no version bump is needed."""
+    require_capability(
+        repo, account, namespace, Capability.AMEND_ANY,
+        resource_author=repo.version_author(namespace, name, version),
+    )
     data = await logo.read()
     try:
         manifest = await run_in_threadpool(
@@ -220,8 +231,12 @@ def yank(
     version: str,
     body: YankRequest | None = None,
 ) -> dict:
-    """Set (or clear) the yanked flag on a version. Owner-only."""
-    require_namespace_member(account, namespace)
+    """Set (or clear) the yanked flag on a version. Reversible, so it's own-scoped for a member
+    (yank your own versions) and any for admin+."""
+    require_capability(
+        repo, account, namespace, Capability.YANK_ANY,
+        resource_author=repo.version_author(namespace, name, version),
+    )
     yanked = body.yanked if body is not None else True
     if not repo.set_yanked(namespace, name, version, yanked):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="version_not_found")

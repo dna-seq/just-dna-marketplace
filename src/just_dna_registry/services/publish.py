@@ -67,6 +67,7 @@ def publish_version(
     changelog: str,
     owner: str,
     files: Mapping[str, bytes],
+    published_by: Optional[int] = None,
 ) -> ModuleManifest:
     """Publish from individually-uploaded spec files."""
     missing = [f for f in REQUIRED_SPEC_FILES if f not in files]
@@ -80,7 +81,8 @@ def publish_version(
             dest.write_bytes(data)
         return _finalize(
             repo=repo, storage=storage, settings=settings, namespace=namespace, name=name,
-            version=version, changelog=changelog, owner=owner, spec_dir=spec_dir,
+            version=version, changelog=changelog, owner=owner, published_by=published_by,
+            spec_dir=spec_dir,
         )
 
 
@@ -96,6 +98,7 @@ def import_archive(
     owner: str,
     archive: bytes,
     display: Optional[dict] = None,
+    published_by: Optional[int] = None,
 ) -> ModuleManifest:
     """Publish from a zip/tar.gz archive: a spec archive is compiled directly; a legacy
     parquet-only archive is reverse-engineered (with client-supplied `display` metadata) first."""
@@ -118,7 +121,8 @@ def import_archive(
                 reverse_module(root, spec_dir, module_name=name, **(_reverse_kwargs(display)))
             return _finalize(
                 repo=repo, storage=storage, settings=settings, namespace=namespace, name=name,
-                version=version, changelog=changelog, owner=owner, spec_dir=spec_dir,
+                version=version, changelog=changelog, owner=owner, published_by=published_by,
+                spec_dir=spec_dir,
             )
 
 
@@ -136,6 +140,7 @@ def _finalize(
     changelog: str,
     owner: str,
     spec_dir: Path,
+    published_by: Optional[int] = None,
 ) -> ModuleManifest:
     """Validate + recompile a prepared spec dir, store the version, and index it."""
     with start_action(
@@ -213,7 +218,7 @@ def _finalize(
             }
             key = version_key(namespace, name, version)
             storage.store_module(key, stored)
-            ingest_manifest(repo, manifest, changelog=changelog)
+            ingest_manifest(repo, manifest, changelog=changelog, published_by=published_by)
             action.add_success_fields(
                 digest=manifest.artifact.digest,
                 storage_key=key,

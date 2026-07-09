@@ -14,7 +14,7 @@ from fastapi import FastAPI, HTTPException, Request, status
 from just_dna_format.signing import public_key_b64_from_pem
 
 from just_dna_registry import __version__
-from just_dna_registry.api.routers import auth, modules, namespaces, publish, reviews
+from just_dna_registry.api.routers import auth, modules, namespaces, orgs, publish, reviews
 from just_dna_registry.config import API_PREFIX, Settings, get_settings
 from just_dna_registry.version import VersionInfo
 from just_dna_registry.db.repository import Repository
@@ -83,6 +83,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     app.include_router(reviews.router, prefix=API_PREFIX)
     app.include_router(publish.router, prefix=API_PREFIX)
     app.include_router(namespaces.router, prefix=API_PREFIX)
+    app.include_router(orgs.router, prefix=API_PREFIX)
     app.include_router(auth.router, prefix=API_PREFIX)
 
     @app.get("/health", tags=["ops"])

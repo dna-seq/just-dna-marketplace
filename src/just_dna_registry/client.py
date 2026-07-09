@@ -325,31 +325,71 @@ class RegistryClient:
         email: Optional[str] = None,
         display_name: Optional[str] = None,
         avatar_url: Optional[str] = None,
+        funding_url: Optional[str] = None,
     ) -> dict:
         """Edit the caller's own profile. Only the fields passed are sent; pass `""` to clear one.
         `type` is not self-editable. Returns the updated identity."""
         body = {
             k: v
-            for k, v in (("email", email), ("display_name", display_name), ("avatar_url", avatar_url))
+            for k, v in (
+                ("email", email), ("display_name", display_name),
+                ("avatar_url", avatar_url), ("funding_url", funding_url),
+            )
             if v is not None
         }
         return self._json(self._http.patch("/auth/whoami", json=body))
 
-    # ── Namespace membership (owner-gated mutations) ────────────────────────────
+    # ── Namespace membership (admin+ mutations; role grants are owner-gated) ─────
 
     def members(self, namespace: str) -> list[dict]:
         """List a namespace's members `[{account, role}]` (any member may read)."""
         return self._json(self._http.get(f"/namespaces/{namespace}/members"))["members"]
 
-    def add_member(self, namespace: str, account: str, role: str = "contributor") -> dict:
-        """Add or promote a member (owner-only). `role` = `owner` | `contributor`."""
+    def add_member(self, namespace: str, account: str, role: str = "member") -> dict:
+        """Add or re-role a member. `role` = `owner` | `admin` | `member`. Adding a member needs
+        admin+; granting admin/owner needs owner."""
         return self._json(
             self._http.post(f"/namespaces/{namespace}/members", json={"account": account, "role": role})
         )
 
     def remove_member(self, namespace: str, account: str) -> dict:
-        """Revoke a member's namespace access (owner-only; can't remove the last owner)."""
+        """Revoke a member's namespace access (admin+; removing an owner needs owner)."""
         return self._json(self._http.delete(f"/namespaces/{namespace}/members/{account}"))
+
+    # ── Orgs (0.9.0) ────────────────────────────────────────────────────────────
+
+    def create_org(self, name: str) -> dict:
+        """Create an org account; the caller becomes its owner."""
+        return self._json(self._http.post("/orgs", json={"name": name}))
+
+    def org_members(self, org: str) -> list[dict]:
+        """List an org's members `[{account, role}]` (any org member may read)."""
+        return self._json(self._http.get(f"/orgs/{org}/members"))["members"]
+
+    def add_org_member(self, org: str, account: str, role: str = "member") -> dict:
+        """Add or re-role an org member (admin+; granting admin/owner needs owner)."""
+        return self._json(
+            self._http.post(f"/orgs/{org}/members", json={"account": account, "role": role})
+        )
+
+    def set_org_role(self, org: str, member: str, role: str) -> dict:
+        """Change an org member's role (owner-only)."""
+        return self._json(self._http.put(f"/orgs/{org}/members/{member}/role", json={"role": role}))
+
+    def remove_org_member(self, org: str, member: str) -> dict:
+        """Remove an org member (admin+; removing an owner needs owner)."""
+        return self._json(self._http.delete(f"/orgs/{org}/members/{member}"))
+
+    def update_org_settings(self, org: str, **fields: Optional[str]) -> dict:
+        """Edit an org's profile (owner-only): `funding_url`, `display_name`, `avatar_url`, `email`."""
+        body = {k: v for k, v in fields.items() if v is not None}
+        return self._json(self._http.patch(f"/orgs/{org}/settings", json=body))
+
+    def create_org_namespace(self, org: str, namespace: str) -> dict:
+        """Claim a namespace owned by the org (admin+; access flows via the org-role cascade)."""
+        return self._json(
+            self._http.post(f"/orgs/{org}/namespaces", json={"namespace": namespace})
+        )
 
     # ── Yank / un-yank (owner-gated) ────────────────────────────────────────────
 

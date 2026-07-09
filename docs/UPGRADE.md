@@ -1,5 +1,18 @@
 # Contract upgrades & the stale-module procedure
 
+## 0.9.0 RBAC migration (operator note)
+
+0.9.0 renamed the namespace role `contributor` → `member` (migrated in place by `init_db`) and made
+authorization capability-based. **This tightens permissions:** an old `contributor` could
+amend/yank *any* version in the namespace; a `member` can only amend/yank versions **it published**
+(`versions.published_by`). To restore broad rights for someone, grant them `admin`
+(`registry add-member <ns> <account> --role admin`). Also: versions published **before** 0.9.0 have
+no recorded author, so only `admin`+ can amend/yank them (fail-closed). Orgs (`type='org'`) now have
+members whose role cascades to org-owned namespaces — see the org endpoints/CLI. No artifact or
+manifest is affected; this is a DB-projection + authorization change only.
+
+---
+
 `just-dna-registry` pins a `just-dna-format` / `just-dna-compiler` contract version. Bumping it
 can tighten a validator (the archetype: `StudyRow.pmid` gaining a `PMID_PATTERN` rule in 0.2.0).
 This doc is the agreed procedure for such events, so a contract bump can never silently strand

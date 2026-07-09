@@ -51,6 +51,8 @@ class ModuleCard(BaseModel):
     review_count: int = 0
     avg_rating: Optional[float] = None  # mean 1-5 rating across reviews, None when unreviewed
     curated: bool = False  # has ≥1 owner-highlighted review/audit (the `curated` group)
+    author_funding_url: Optional[str] = None  # latest version's author's donation link
+    org_funding_url: Optional[str] = None  # owning org's donation link (when the namespace is org-owned)
 
 
 class VersionSummary(BaseModel):
@@ -94,6 +96,7 @@ class WhoAmI(BaseModel):
     type: str = "user"  # GitHub-style discriminator: `user` | `org`
     display_name: Optional[str] = None
     avatar_url: Optional[str] = None  # userpic (public http(s) URL)
+    funding_url: Optional[str] = None  # donation/sponsor link (public http(s) URL)
     email: Optional[str] = None
 
 
@@ -110,6 +113,7 @@ class ProfileUpdate(BaseModel):
     email: Optional[str] = None
     display_name: Optional[str] = None
     avatar_url: Optional[str] = None
+    funding_url: Optional[str] = None
 
     @field_validator("email")
     @classmethod
@@ -120,18 +124,18 @@ class ProfileUpdate(BaseModel):
             raise ValueError("email must look like name@host.tld")
         return v
 
-    @field_validator("avatar_url")
+    @field_validator("avatar_url", "funding_url")
     @classmethod
-    def _validate_avatar_url(cls, v: Optional[str]) -> Optional[str]:
-        if v is None or v == "":  # "" clears the userpic
+    def _validate_http_url(cls, v: Optional[str]) -> Optional[str]:
+        if v is None or v == "":  # "" clears the field
             return v
         if not _HTTP_URL_RE.match(v):
-            raise ValueError("avatar_url must be an http(s) URL")
+            raise ValueError("must be an http(s) URL")
         return v
 
 
 class MemberEntry(BaseModel):
-    """One namespace member: an account and its role (`owner` | `contributor`)."""
+    """One member: an account and its role (`owner` | `admin` | `member`)."""
 
     account: str
     role: str
@@ -142,6 +146,43 @@ class MemberList(BaseModel):
 
     namespace: str
     members: list[MemberEntry]
+
+
+class OrgMemberList(BaseModel):
+    """Members of an org (`GET /orgs/{org}/members`)."""
+
+    org: str
+    members: list[MemberEntry]
+
+
+class CreateOrgRequest(BaseModel):
+    """Body for `POST /orgs` — create an org account and seed the caller as its owner."""
+
+    name: str
+
+
+class RoleUpdate(BaseModel):
+    """Body for `PUT /orgs/{org}/members/{m}/role`."""
+
+    role: str
+
+
+class OrgSettings(BaseModel):
+    """Body for `PATCH /orgs/{org}/settings` — org profile edits (funding link, display, etc.)."""
+
+    display_name: Optional[str] = None
+    avatar_url: Optional[str] = None
+    funding_url: Optional[str] = None
+    email: Optional[str] = None
+
+    @field_validator("avatar_url", "funding_url")
+    @classmethod
+    def _validate_http_url(cls, v: Optional[str]) -> Optional[str]:
+        if v is None or v == "":
+            return v
+        if not _HTTP_URL_RE.match(v):
+            raise ValueError("must be an http(s) URL")
+        return v
 
 
 class StarStatus(BaseModel):
@@ -192,4 +233,4 @@ class AddMemberRequest(BaseModel):
     """Body for `POST /namespaces/{ns}/members`."""
 
     account: str
-    role: str = "contributor"
+    role: str = "member"

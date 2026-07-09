@@ -104,7 +104,7 @@ Non-2xx responses raise **`RegistryError(status_code, detail)`**.
 
 - **`whoami() -> dict`** — `{account, namespaces, type, display_name, avatar_url, email}` (`email`
   only ever returned to the account itself).
-- **`update_profile(*, email=None, display_name=None, avatar_url=None) -> dict`** — edit your own
+- **`update_profile(*, email=None, display_name=None, avatar_url=None, funding_url=None) -> dict`** — edit your own
   profile; only the fields passed are sent, `""` clears one. `type` is not self-editable.
 
 ### Social & moderation (token)
@@ -119,8 +119,21 @@ Non-2xx responses raise **`RegistryError(status_code, detail)`**.
   highlights (or un-highlights) a review — the `curated` signal.
 - **`yank(ns, name, version)` / `unyank(...) -> dict`** — owner: drop from listings/`latest` (kept
   fetchable) or reverse it.
-- **`members(ns) -> list[dict]`**, **`add_member(ns, account, role="contributor")`**,
-  **`remove_member(ns, account) -> dict`** — namespace membership (mutations are owner-only).
+- **`members(ns) -> list[dict]`**, **`add_member(ns, account, role="member")`**,
+  **`remove_member(ns, account) -> dict`** — namespace membership (`owner|admin|member`; adding a
+  member needs admin+, granting admin/owner needs owner).
+
+### Orgs & funding (token)
+
+- **`create_org(name) -> dict`** — create an org account (caller becomes owner).
+- **`org_members(org)`**, **`add_org_member(org, account, role="member")`**,
+  **`set_org_role(org, member, role)`**, **`remove_org_member(org, member) -> dict`** — org
+  membership (roles cascade to org-owned namespaces).
+- **`update_org_settings(org, funding_url=…, display_name=…, avatar_url=…, email=…) -> dict`** — edit
+  the org profile (owner-only).
+- **`create_org_namespace(org, namespace) -> dict`** — claim a namespace owned by the org (admin+).
+- Funding: set your own via `update_profile(funding_url=…)`; a module card carries both
+  `author_funding_url` and `org_funding_url`.
 
 ### Discovery & stats
 
@@ -232,6 +245,11 @@ registry blacklist <ns> / unblacklist <ns>           # moderate: hide from defau
 registry remove-version <ns> <name> <v> [--yes]      # hard-delete ONE version (not yank)
 registry remove-module <ns> <name> [--yes]           # hard-delete a whole module (all versions)
 registry remove-namespace <ns> [--yes]               # purge + free the namespace
+registry add-member <ns> <acct> --role owner|admin|member    # namespace membership
+registry create-org <name>                           # create an org account
+registry add-org-member <org> <acct> --role owner|admin|member
+registry remove-org-member <org> <acct> / list-org-members <org>
+registry set-funding <acct-or-org> <url>             # set/clear a donation link ('' clears)
 registry issue-key <acct> --email … --display-name … --avatar-url … --type user|org
 registry export-keys [-o auth.json]                  # dump accounts + API keys + namespaces (SECRET)
 registry import-keys auth.json                       # restore the auth graph (idempotent)

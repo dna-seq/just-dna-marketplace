@@ -61,6 +61,7 @@ def _card(repo: Repository, row: sqlite3.Row, starred_by: Optional[int] = None) 
     )
     starred = starred_by is not None and repo.is_starred(int(row["id"]), starred_by)
     reviews = repo.review_summary(int(row["id"]))
+    funding = repo.funding_for_module(row["namespace"], row["name"])
     return ModuleCard(
         namespace=row["namespace"],
         name=row["name"],
@@ -87,6 +88,8 @@ def _card(repo: Repository, row: sqlite3.Row, starred_by: Optional[int] = None) 
         review_count=reviews["review_count"],
         avg_rating=reviews["avg_rating"],
         curated=reviews["highlighted_count"] > 0,
+        author_funding_url=funding["author_funding_url"],
+        org_funding_url=funding["org_funding_url"],
     )
 
 

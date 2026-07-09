@@ -45,7 +45,7 @@ async def test_whoami_and_profile(sdk) -> None:
 
 async def test_members_roundtrip(sdk, app) -> None:
     app.state.repo.create_account("bob")
-    roster = await asyncio.to_thread(lambda: sdk.add_member(_NS, "bob", "contributor"))
+    roster = await asyncio.to_thread(lambda: sdk.add_member(_NS, "bob", "member"))
     assert {m["account"] for m in roster["members"]} >= {"antonkulaga", "bob"}
     listed = await asyncio.to_thread(lambda: sdk.members(_NS))
     assert any(m["account"] == "bob" for m in listed)

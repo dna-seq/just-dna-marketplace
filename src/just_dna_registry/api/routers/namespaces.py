@@ -10,21 +10,19 @@ from just_dna_registry.api.deps import (
     Account,
     get_repo,
     require_account,
-    require_namespace_member,
-    require_namespace_owner,
+    require_capability,
     settings_dep,
 )
 from just_dna_registry.config import Settings
 from just_dna_registry.db.repository import Repository
 from just_dna_registry.models.api import AddMemberRequest, MemberEntry, MemberList
+from just_dna_registry.permissions import VALID_NS_ROLES, Capability
 
 router = APIRouter(prefix="/namespaces", tags=["namespaces"])
 
 RepoDep = Annotated[Repository, Depends(get_repo)]
 SettingsDep = Annotated[Settings, Depends(settings_dep)]
 AccountDep = Annotated[Account, Depends(require_account)]
-
-_VALID_ROLES = {"owner", "contributor"}
 
 
 class ClaimRequest(BaseModel):
@@ -63,8 +61,8 @@ def claim(repo: RepoDep, settings: SettingsDep, account: AccountDep, body: Claim
 
 @router.get("/{namespace}/members", response_model=MemberList)
 def list_members(repo: RepoDep, account: AccountDep, namespace: str) -> MemberList:
-    """List a namespace's members. Any member (owner or contributor) may read the roster."""
-    require_namespace_member(account, namespace)
+    """List a namespace's members. Any member may read the roster."""
+    require_capability(repo, account, namespace, Capability.PUBLISH)  # any role has PUBLISH
     return MemberList(
         namespace=namespace,
         members=[MemberEntry(account=r["account"], role=r["role"]) for r in repo.list_members(namespace)],
@@ -75,11 +73,13 @@ def list_members(repo: RepoDep, account: AccountDep, namespace: str) -> MemberLi
 def add_member(
     repo: RepoDep, account: AccountDep, namespace: str, body: AddMemberRequest
 ) -> MemberList:
-    """Add or promote an account in a namespace. Owner-only. Both roles can publish; only owners
-    manage membership."""
-    require_namespace_owner(repo, account, namespace)
-    if body.role not in _VALID_ROLES:
+    """Add or re-role an account in a namespace. Adding a `member` needs manage-members (admin+);
+    granting `admin`/`owner` needs manage-roles (owner)."""
+    require_capability(repo, account, namespace, Capability.MANAGE_MEMBERS)
+    if body.role not in VALID_NS_ROLES:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail="invalid_role")
+    if body.role in ("owner", "admin"):
+        require_capability(repo, account, namespace, Capability.MANAGE_ROLES)
     target = repo.account_by_name(body.account)
     if target is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="account_not_found")
@@ -95,16 +95,17 @@ def remove_member(
     repo: RepoDep, account: AccountDep, namespace: str, member: str
 ) -> MemberList:
     """Revoke an account's access to a namespace (removes the membership row — namespace-scoped, not
-    a global key revocation). Owner-only. Refuses to remove the last owner."""
-    require_namespace_owner(repo, account, namespace)
+    a global key revocation). Needs manage-members (admin+); removing an **owner** needs manage-roles
+    (owner). Refuses to remove the last owner."""
+    require_capability(repo, account, namespace, Capability.MANAGE_MEMBERS)
     target = repo.account_by_name(member)
     if target is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="account_not_found")
-    if (
-        repo.namespace_role(namespace, int(target["id"])) == "owner"
-        and repo.count_namespace_owners(namespace) <= 1
-    ):
-        raise HTTPException(status.HTTP_409_CONFLICT, detail="last_owner")
+    target_role = repo.namespace_role(namespace, int(target["id"]))
+    if target_role == "owner":
+        require_capability(repo, account, namespace, Capability.MANAGE_ROLES)  # only owners remove owners
+        if repo.count_namespace_owners(namespace) <= 1:
+            raise HTTPException(status.HTTP_409_CONFLICT, detail="last_owner")
     if not repo.remove_member(namespace, int(target["id"])):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="not_a_member")
     return MemberList(

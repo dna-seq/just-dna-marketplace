@@ -6,6 +6,7 @@ manifest produced by the server-side compile can be indexed with one call.
 """
 
 from datetime import datetime, timezone
+from typing import Optional
 
 from just_dna_format.manifest import ModuleManifest
 
@@ -23,15 +24,17 @@ def ingest_manifest(
     *,
     changelog: str = "",
     created_at: str | None = None,
+    published_by: Optional[int] = None,
 ) -> int:
     """
     Insert a published version into the projection and refresh the module's latest pointer.
-    Returns the new version id. Assumes immutability was already checked upstream.
+    Returns the new version id. Assumes immutability was already checked upstream. `published_by`
+    is the authoring account (RBAC own-scoping + author funding); None for seeds/legacy imports.
     """
     stamp = created_at or now_iso()
     module_id = repo.upsert_module(manifest, updated_at=stamp)
     version_id = repo.insert_version(
-        module_id, manifest, changelog=changelog, created_at=stamp
+        module_id, manifest, changelog=changelog, created_at=stamp, published_by=published_by
     )
     repo.recompute_latest(module_id)
     return version_id

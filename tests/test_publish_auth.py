@@ -61,7 +61,8 @@ def test_whoami_ok(client: TestClient, api_key: str) -> None:
     body = client.get("/api/v1/auth/whoami", headers=_auth(api_key)).json()
     assert body == {
         "account": "antonkulaga", "namespaces": ["just-dna-seq"],
-        "type": "user", "display_name": None, "avatar_url": None, "email": None,
+        "type": "user", "display_name": None, "avatar_url": None,
+        "funding_url": None, "email": None,
     }
 
 
@@ -80,7 +81,7 @@ def test_publish_requires_auth(client: TestClient) -> None:
 def test_publish_rejects_unowned_namespace(client: TestClient, api_key: str) -> None:
     resp = _publish(client, api_key, "someone-else", "coronary", "1.0.0")
     assert resp.status_code == 403
-    assert resp.json()["detail"] == "not_namespace_member"
+    assert resp.json()["detail"] == "insufficient_capability"
 
 
 def test_publish_rejects_bad_version(client: TestClient, api_key: str) -> None:

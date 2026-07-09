@@ -117,20 +117,20 @@ def test_contributor_gains_publish_then_loses_it(
     # Not a member → publish is forbidden.
     assert _publish(client, labmate_key) == 403
 
-    # Owner adds labmate as a contributor.
+    # Owner adds labmate as a member.
     r = client.post(
         "/api/v1/namespaces/just-dna-seq/members",
-        json={"account": "labmate", "role": "contributor"},
+        json={"account": "labmate", "role": "member"},
         headers=owner_hdr,
     )
     assert r.status_code == 201
     roles = {m["account"]: m["role"] for m in r.json()["members"]}
-    assert roles == {"antonkulaga": "owner", "labmate": "contributor"}
+    assert roles == {"antonkulaga": "owner", "labmate": "member"}
 
-    # Now the contributor can publish.
+    # Now the member can publish.
     assert _publish(client, labmate_key) == 201
 
-    # A contributor cannot manage membership.
+    # A member cannot manage membership.
     assert client.post(
         "/api/v1/namespaces/just-dna-seq/members",
         json={"account": "labmate", "role": "owner"},

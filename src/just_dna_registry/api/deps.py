@@ -13,6 +13,7 @@ from fastapi import Depends, Header, HTTPException, Query, Request, status
 from just_dna_registry.config import Settings
 from just_dna_registry.db.repository import Repository
 from just_dna_registry.jwtauth import decode_jwt
+from just_dna_registry.permissions import Capability, OWN_FALLBACK, higher_role, role_has
 from just_dna_registry.storage.base import StorageBackend
 
 
@@ -108,16 +109,50 @@ def optional_account(
     return None
 
 
-def require_namespace_member(account: Account, namespace: str) -> None:
-    """Raise 403 unless `account` is a member (owner or contributor) of `namespace`."""
-    if namespace not in account.namespaces:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="not_namespace_member")
+def effective_role(repo: Repository, account: Account, namespace: str) -> Optional[str]:
+    """The caller's effective role on a namespace: the highest of their explicit per-namespace grant
+    and — when the namespace is owned by an **org** they belong to — their org role (the cascade).
+    This is the single place the two ownership sources are reconciled."""
+    per_ns = repo.namespace_role(namespace, account.id)
+    org_role: Optional[str] = None
+    owner_row = repo.namespace_owner(namespace)
+    if owner_row is not None:
+        owning_id = int(owner_row["account_id"])
+        if repo.account_type(owning_id) == "org":
+            org_role = repo.org_role(owning_id, account.id)
+    return higher_role(per_ns, org_role)
 
 
-def require_namespace_owner(repo: Repository, account: Account, namespace: str) -> None:
-    """Raise 403 unless `account` is an **owner** of `namespace` (member-management actions)."""
-    if repo.namespace_role(namespace, account.id) != "owner":
-        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="not_namespace_owner")
+def require_capability(
+    repo: Repository,
+    account: Account,
+    namespace: str,
+    cap: Capability,
+    *,
+    resource_author: Optional[int] = None,
+) -> None:
+    """Raise 403 unless `account` has `cap` on `namespace`. For an `*_ANY` capability, auto-downgrade
+    to the matching `*_OWN` variant when the caller authored the resource (`resource_author`)."""
+    role = effective_role(repo, account, namespace)
+    if role_has(role, cap):
+        return
+    own = OWN_FALLBACK.get(cap)
+    if (
+        own is not None
+        and resource_author is not None
+        and resource_author == account.id
+        and role_has(role, own)
+    ):
+        return
+    raise HTTPException(status.HTTP_403_FORBIDDEN, detail="insufficient_capability")
+
+
+def require_org_capability(
+    repo: Repository, account: Account, org_id: int, cap: Capability
+) -> None:
+    """Raise 403 unless `account` has `cap` in the org (`org_members` role; no cascade at org level)."""
+    if not role_has(repo.org_role(org_id, account.id), cap):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="insufficient_capability")
 
 
 def _rate_identity(request: Request) -> str:
