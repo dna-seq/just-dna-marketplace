@@ -41,7 +41,10 @@ def test_jwt_exchange_and_accept(tmp_path: Path) -> None:
 
     # The JWT is accepted as a bearer.
     who = client.get("/api/v1/auth/whoami", headers=_auth(jwt_token)).json()
-    assert who == {"account": "alice", "namespaces": ["alice"]}
+    assert who == {
+        "account": "alice", "namespaces": ["alice"],
+        "type": "user", "display_name": None, "email": None,
+    }
 
     # Bad key can't mint; garbage bearer is rejected.
     assert client.post("/api/v1/auth/tokens", json={"api_key": "nope"}).status_code == 401

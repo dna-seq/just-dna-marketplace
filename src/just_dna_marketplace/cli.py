@@ -13,6 +13,7 @@ from just_dna_format.manifest import ModuleManifest
 from just_dna_marketplace.config import Settings, get_settings
 from just_dna_marketplace.db.repository import Repository
 from just_dna_marketplace.db.schema import connect, init_db
+from just_dna_marketplace.models.api import VALID_ACCOUNT_TYPES
 from just_dna_marketplace.services.pmid_check import verify_pmids
 from just_dna_marketplace.services.revalidate import gather_pmids, revalidate_version
 from just_dna_marketplace.services.upgrade import plan_version_upgrade, upgrade_version
@@ -48,18 +49,29 @@ def init_db_command() -> None:
 
 
 @app.command("issue-key")
-def issue_key(account: str, namespace: list[str] = typer.Option([], "--namespace", "-n")) -> None:
+def issue_key(
+    account: str,
+    namespace: list[str] = typer.Option([], "--namespace", "-n"),
+    email: str = typer.Option(None, "--email", help="Account contact email (private)"),
+    display_name: str = typer.Option(None, "--display-name", help="Human display name"),
+    account_type: str = typer.Option("user", "--type", help="Account type: user|org"),
+) -> None:
     """Create an account (if needed), grant it namespaces, and print a fresh API key."""
+    if account_type not in VALID_ACCOUNT_TYPES:
+        raise typer.BadParameter(f"--type must be one of {sorted(VALID_ACCOUNT_TYPES)}")
     settings = get_settings()
     conn = connect(settings.db_path)
     init_db(conn)
     repo = Repository(conn)
     account_id = repo.create_account(account)
+    repo.set_account_type(account_id, account_type)
+    if email is not None or display_name is not None:
+        repo.set_account_profile(account_id, email=email, display_name=display_name)
     for ns in namespace:
         repo.add_namespace(ns, account_id)
     key = "mk_live_" + secrets.token_urlsafe(24)
     repo.add_api_key(key, account_id)
-    typer.echo(f"account={account} namespaces={namespace}")
+    typer.echo(f"account={account} type={account_type} namespaces={namespace}")
     typer.echo(f"API key: {key}")
 
 

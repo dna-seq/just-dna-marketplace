@@ -6,6 +6,95 @@ All notable changes to **just-dna-marketplace**. Format follows
 Full API: [API-REFERENCE.md](API-REFERENCE.md) · client: [CLIENT.md](CLIENT.md) · plan:
 [ROADMAP.md](ROADMAP.md).
 
+## [0.8.0] — 2026-07-09
+
+Listing groups + reviews/audits + account profiles — additive, marketplace-layer catalog features.
+No contract change (pins stay `>=0.3.0`); `just-dna-format` is untouched. New tables/columns are
+created idempotently by `init_db`, so a live catalog upgrades in place.
+
+### Added — listing groups
+Server-owned namespace grouping behind the webui's tabs. Membership is defined server-side (not in a
+consumer) so the webui, the CLI, and any client agree on what each tab contains.
+- **`?group=` on `GET /modules`** — `all | featured | curated | popular | new | test`, each a preset
+  over the existing primitives: `featured`→`featured=true`, `curated`→has an owner-highlighted review,
+  `popular`→`sort=popular`, `new`→`sort=recent`, `all`→everything. A group wins over the equivalent
+  raw `sort`/`featured` params.
+- **Test/sandbox isolation.** Namespaces matching `MARKETPLACE_TEST_NAMESPACE_PATTERN` (default
+  `^(sandbox|test)([-_]|$)`) are classified `test`: surfaced only under `?group=test` and **hidden
+  from every other tab** (including the default listing). A test space stays reachable by exact
+  `?namespace=`. The regex is server config, never a client-supplied param (consistency + no ReDoS
+  surface).
+- **`GET /api/v1/modules/groups`** — discovery endpoint returning `[{key, label, description}]` so a
+  UI renders tabs from server truth instead of hardcoding.
+- Client CLI: `marketplace-client list --group <tab>`.
+
+### Added — reviews & audits
+A marketplace-layer social record about a published version. **Not a module feature: the manifest is
+untouched** (reviews are mutable social data; the manifest is the immutable, content-addressed
+artifact).
+- **Open, version-scoped reviews.** `PUT/DELETE /api/v1/modules/{ns}/{name}/versions/{v}/reviews`
+  (bearer) — anyone authenticated posts one review per version: a `rating` (1-5) plus an optional
+  audit `verdict` (`verified|concerns|rejected`) and `notes`. Re-posting replaces (one per account
+  per version). `GET .../reviews` (and `GET /modules/{ns}/{name}/reviews` across versions) list them,
+  highlighted first. Anonymous reads.
+- **Owner highlight (SO accepted-answer style).** `PUT/DELETE
+  .../versions/{v}/reviews/{reviewer}/highlight` — the **namespace owner** highlights the good
+  reviews; any number may be highlighted ("the more the merrier"). A highlighted review is the trust
+  signal that `?group=curated` and the card `curated` flag key on (and, once a reputation system
+  lands, will accrue to the reviewer as demonstrated expertise).
+- **Card fields** `review_count`, `avg_rating` (mean 1-5, null when unreviewed), and `curated` (has a
+  highlighted review).
+
+### Added — account profiles
+The `accounts` row is the single user primitive (auth stays token-based; no separate `users` table).
+- **`email`** (private — returned only from `whoami`, unique when set) and **`display_name`** (human
+  name, distinct from the `name` handle) columns, plus a GitHub-style **`type`** discriminator
+  (`user` | `org`) so one identity primitive can be a person or an organization.
+- **`PATCH /api/v1/auth/whoami`** — the account edits its own `email`/`display_name` (omitted fields
+  unchanged; `""` clears; duplicate email → `409 email_taken`). `whoami` now returns `type`,
+  `display_name`, `email`. `type` is set at creation by the admin CLI, not self-editable.
+- `marketplace issue-key` gains `--email`, `--display-name`, `--type user|org`.
+
+### Note
+- Grouping operates over the **module listing** (which modules show per tab). A namespace-browse view
+  (list spaces with aggregate stats) was considered and deferred — not needed for the tabbed listing.
+- Reviews are **version-scoped**: an audit vouches for specific bytes; a new version starts
+  un-highlighted. Editing a review leaves the owner's highlight untouched.
+
+## [0.7.1] — 2026-07-08
+
+Adopts **just-dna-format / just-dna-compiler 0.3.0** (pins bumped to `>=0.3.0`) and adds the
+automation and the client/server guard that a contract bump needs. The 0.3 columns are additive and
+the server recompiles every spec, so published modules gain them on their next publish with no
+migration.
+
+### Added
+- **`marketplace upgrade`** (+ `services/upgrade.py`) — back-populates the additive 0.3 axes
+  (`direction`, `stat_significance`, `clin_sig`, and a trimmed `state`) from the legacy
+  `state`/ClinVar booleans by applying the format's own `VariantRow.upgraded()` derivation, then
+  re-publishes as the next PATCH through the normal server-side compile path. Dry-run by default;
+  `--apply` publishes; `-n`/`-m` scope it. The predecessor is never mutated, the transform is
+  idempotent, and the logo carries forward (logs/provenance do not — they describe the predecessor).
+- **Server/client version-mismatch guard.** The server advertises its versions — `GET
+  /api/v1/version` (`{api, marketplace, format, compiler}`) plus `X-Marketplace-Version` /
+  `X-Format-Version` / `X-API-Version` on **every** response — and the client sends its own as
+  request headers. Before publish/import/download the client calls `assert_compatible()` and raises
+  `VersionMismatchError` (409) with an actionable message when the API version or the
+  `just-dna-format` contract can't interoperate (same MAJOR; and same MINOR while `0.x`, since a 0.x
+  minor moves the parquet schema / `artifact.digest` — the 0.2→0.3 case). A differing marketplace
+  *app* version is **not** fatal (the API is path-versioned). Escape hatch
+  `MARKETPLACE_SKIP_VERSION_CHECK=1` (or `MarketplaceClient(check_version=False)`);
+  `marketplace-client version` prints both sides and the verdict. Logic in `version.py`.
+
+### Changed
+- **`revalidate` now reports `ok` / `upgradable` / `needs_upgrade` / `skipped`.** Because the 0.3
+  columns are additive, a legacy module still *validates* — the new `upgradable` status flags a
+  version whose 0.3 axes can be losslessly back-populated (re-publish with `marketplace upgrade`),
+  distinct from `needs_upgrade` (fails the current validator). `--set-flag` marks both.
+- Contract pins `just-dna-format` / `just-dna-compiler` → `>=0.3.0`.
+- Coding-standards doc (`CLAUDE.md`): logging policy switched to stdlib `logging` (Eliot is being
+  retired); the new `version.py` / `client.py` follow it.
+
 ## [0.6.0] — 2026-07-08
 
 Community & discovery features. No `just-dna-format`/`just-dna-compiler` change (pins stay `>=0.2.0`).
@@ -232,6 +321,10 @@ Initial marketplace service (internal builds; superseded by 0.2.0 packaging).
   `remove-module` / `remove-namespace` (purges DB rows + artifacts, frees the namespace; not yank).
 - `.env.template`, `docs/SPEC.md`, `docs/ROADMAP.md`.
 
+[0.8.0]: #080--2026-07-09
+[0.7.1]: #071--2026-07-08
+[0.6.0]: #060--2026-07-08
+[0.5.0]: #050--2026-07-07
 [0.4.5]: #045--2026-07-07
 [0.4.4]: #044--2026-07-07
 [0.4.3]: #043--2026-07-07

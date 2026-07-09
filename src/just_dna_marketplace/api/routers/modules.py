@@ -24,6 +24,7 @@ from just_dna_marketplace.api.deps import (
 )
 from just_dna_marketplace.config import Settings
 from just_dna_marketplace.db.repository import Repository
+from just_dna_marketplace.groups import GROUPS, GroupInfo
 from just_dna_marketplace.models.api import (
     ModuleCard,
     ModuleDetail,
@@ -59,6 +60,7 @@ class DigestLookup(BaseModel):
 @router.get("", response_model=Page[ModuleCard], dependencies=[Depends(rate_limit("search"))])
 def list_modules(
     repo: RepoDep,
+    settings: SettingsDep,
     page: PageDep,
     caller: CallerDep,
     q: Optional[str] = None,
@@ -70,6 +72,7 @@ def list_modules(
     namespace: Optional[str] = None,
     featured: Optional[bool] = None,
     include_blacklisted: bool = False,
+    group: Optional[str] = Query(None, pattern="^(all|featured|curated|popular|new|test)$"),
     sort: str = Query("name", pattern="^(downloads|recent|name|stars|popular)$"),
 ) -> Page[ModuleCard]:
     return catalog.list_modules(
@@ -77,6 +80,8 @@ def list_modules(
         page=page.page,
         per_page=page.per_page,
         starred_by=caller.id if caller else None,
+        group=group,
+        test_pattern=settings.test_namespace_pattern,
         q=q,
         category=category,
         gene=gene,
@@ -88,6 +93,13 @@ def list_modules(
         include_blacklisted=include_blacklisted,
         sort=sort,
     )
+
+
+@router.get("/groups", response_model=list[GroupInfo])
+def list_groups() -> list[GroupInfo]:
+    """The listing groups (tabs) the catalog defines, for a UI to render — membership is server-owned
+    policy (see `?group=` on the module listing). Static: `all|featured|popular|new|test`."""
+    return GROUPS
 
 
 @router.get("/lookup")

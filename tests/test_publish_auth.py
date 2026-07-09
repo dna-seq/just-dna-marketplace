@@ -59,7 +59,10 @@ def test_whoami_requires_token(client: TestClient) -> None:
 
 def test_whoami_ok(client: TestClient, api_key: str) -> None:
     body = client.get("/api/v1/auth/whoami", headers=_auth(api_key)).json()
-    assert body == {"account": "antonkulaga", "namespaces": ["just-dna-seq"]}
+    assert body == {
+        "account": "antonkulaga", "namespaces": ["just-dna-seq"],
+        "type": "user", "display_name": None, "email": None,
+    }
 
 
 # ── Publish guards ────────────────────────────────────────────────────────────

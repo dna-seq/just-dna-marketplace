@@ -71,12 +71,13 @@ def list_modules(
     q: Optional[str] = typer.Option(None, help="Full-text query"),
     gene: Optional[str] = typer.Option(None),
     category: Optional[str] = typer.Option(None),
-    sort: str = typer.Option("name", help="downloads|recent|name"),
+    group: Optional[str] = typer.Option(None, help="Tab: all|featured|popular|new|test"),
+    sort: str = typer.Option("name", help="downloads|recent|name|stars|popular"),
     url: Optional[str] = UrlOpt,
 ) -> None:
     """List / search catalog modules."""
     with _client(url, None) as c:
-        body = c.list_modules(q=q, gene=gene, category=category, sort=sort)
+        body = c.list_modules(q=q, gene=gene, category=category, group=group, sort=sort)
     typer.echo(f"{body['total']} module(s):")
     for item in body["items"]:
         typer.echo(

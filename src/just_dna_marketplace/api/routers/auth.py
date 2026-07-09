@@ -1,6 +1,7 @@
 """Auth endpoints: static-key `whoami` (§8.8) + install-id self-registration (community onboarding)."""
 
 import secrets
+import sqlite3
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -17,7 +18,7 @@ from just_dna_marketplace.config import Settings
 from just_dna_marketplace.db.repository import Repository
 from just_dna_marketplace.installid import validate_install_id
 from just_dna_marketplace.jwtauth import issue_jwt, jwt_enabled
-from just_dna_marketplace.models.api import WhoAmI
+from just_dna_marketplace.models.api import ProfileUpdate, WhoAmI
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -34,9 +35,34 @@ class TokenRequest(BaseModel):
     api_key: str
 
 
+AccountDep = Annotated[Account, Depends(require_account)]
+
+
+def _whoami(repo: Repository, account: Account) -> WhoAmI:
+    row = repo.get_account(account.id)
+    return WhoAmI(
+        account=account.name,
+        namespaces=account.namespaces,
+        type=row["type"] if row else "user",
+        display_name=row["display_name"] if row else None,
+        email=row["email"] if row else None,
+    )
+
+
 @router.get("/whoami", response_model=WhoAmI)
-def whoami(account: Annotated[Account, Depends(require_account)]) -> WhoAmI:
-    return WhoAmI(account=account.name, namespaces=account.namespaces)
+def whoami(repo: RepoDep, account: AccountDep) -> WhoAmI:
+    return _whoami(repo, account)
+
+
+@router.patch("/whoami", response_model=WhoAmI)
+def update_profile(repo: RepoDep, account: AccountDep, body: ProfileUpdate) -> WhoAmI:
+    """Edit the caller's own profile (email / display_name). Bearer = the account being edited; the
+    `type` discriminator is not self-editable (set at creation by the admin CLI)."""
+    try:
+        repo.set_account_profile(account.id, email=body.email, display_name=body.display_name)
+    except sqlite3.IntegrityError:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="email_taken")
+    return _whoami(repo, account)
 
 
 @router.post("/tokens")

@@ -14,7 +14,7 @@ from fastapi import FastAPI, HTTPException, Request, status
 from just_dna_format.signing import public_key_b64_from_pem
 
 from just_dna_marketplace import __version__
-from just_dna_marketplace.api.routers import auth, modules, namespaces, publish
+from just_dna_marketplace.api.routers import auth, modules, namespaces, publish, reviews
 from just_dna_marketplace.config import API_PREFIX, Settings, get_settings
 from just_dna_marketplace.version import VersionInfo
 from just_dna_marketplace.db.repository import Repository
@@ -80,6 +80,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         return response
 
     app.include_router(modules.router, prefix=API_PREFIX)
+    app.include_router(reviews.router, prefix=API_PREFIX)
     app.include_router(publish.router, prefix=API_PREFIX)
     app.include_router(namespaces.router, prefix=API_PREFIX)
     app.include_router(auth.router, prefix=API_PREFIX)

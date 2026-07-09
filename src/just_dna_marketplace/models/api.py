@@ -3,10 +3,11 @@ API request/response models (SPEC §8). Distinct from the `ModuleManifest` contr
 catalog's card/detail/version shapes, projected from stored manifests.
 """
 
+import re
 from typing import Generic, Optional, TypeVar
 
 from just_dna_format.manifest import ModuleManifest
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 T = TypeVar("T")
 
@@ -47,6 +48,9 @@ class ModuleCard(BaseModel):
     updated_at: str
     starred_by_me: bool = False  # true when the authenticated caller has starred this module
     featured: bool = False
+    review_count: int = 0
+    avg_rating: Optional[float] = None  # mean 1-5 rating across reviews, None when unreviewed
+    curated: bool = False  # has ≥1 owner-highlighted review/audit (the `curated` group)
 
 
 class VersionSummary(BaseModel):
@@ -82,10 +86,36 @@ class Page(BaseModel, Generic[T]):
 
 
 class WhoAmI(BaseModel):
-    """Identity response for `GET /auth/whoami`."""
+    """Identity response for `GET /auth/whoami`. `email` is private — returned only here, to the
+    account itself, never in public listings."""
 
-    account: str
+    account: str  # the unique handle (used in URLs and as reviewer attribution)
     namespaces: list[str]
+    type: str = "user"  # GitHub-style discriminator: `user` | `org`
+    display_name: Optional[str] = None
+    email: Optional[str] = None
+
+
+# Account identity vocab + a light email check (kept regex-based to avoid an email-validator dep).
+VALID_ACCOUNT_TYPES: frozenset[str] = frozenset({"user", "org"})
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+class ProfileUpdate(BaseModel):
+    """Body for `PATCH /auth/whoami` — the account edits its own profile. Omitted fields are left
+    unchanged; an empty string clears a field. `type` is not self-editable (admin/creation-time)."""
+
+    email: Optional[str] = None
+    display_name: Optional[str] = None
+
+    @field_validator("email")
+    @classmethod
+    def _validate_email(cls, v: Optional[str]) -> Optional[str]:
+        if v is None or v == "":  # "" clears the field
+            return v
+        if not _EMAIL_RE.match(v):
+            raise ValueError("email must look like name@host.tld")
+        return v
 
 
 class MemberEntry(BaseModel):
@@ -109,6 +139,41 @@ class StarStatus(BaseModel):
     name: str
     stars: int
     starred_by_me: bool
+
+
+# Optional audit tier on a review (a correctness attestation about the reviewed version). A plain
+# review omits it and is just a rating + notes.
+VALID_VERDICTS: frozenset[str] = frozenset({"verified", "concerns", "rejected"})
+
+
+class ReviewRequest(BaseModel):
+    """Body for posting a review/audit of a version — a 1-5 rating plus an optional audit verdict."""
+
+    rating: int = Field(ge=1, le=5, description="Overall rating, 1-5")
+    verdict: Optional[str] = Field(
+        default=None, description=f"Optional audit tier, one of {sorted(VALID_VERDICTS)}"
+    )
+    notes: Optional[str] = Field(default=None, description="Free-text review/audit notes")
+
+    @field_validator("verdict")
+    @classmethod
+    def _validate_verdict(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v not in VALID_VERDICTS:
+            raise ValueError(f"verdict must be one of {sorted(VALID_VERDICTS)}")
+        return v
+
+
+class Review(BaseModel):
+    """A published review/audit of a specific version."""
+
+    reviewer: str = Field(description="Reviewer account name")
+    version: str
+    rating: int
+    verdict: Optional[str] = None
+    notes: Optional[str] = None
+    highlighted: bool = False  # the namespace owner accepted/highlighted this review
+    created_at: str
+    updated_at: str
 
 
 class AddMemberRequest(BaseModel):

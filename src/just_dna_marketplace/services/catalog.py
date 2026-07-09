@@ -8,6 +8,7 @@ from typing import Optional
 
 from just_dna_format.manifest import ModuleManifest
 
+from just_dna_marketplace import groups
 from just_dna_marketplace.config import API_PREFIX
 from just_dna_marketplace.db.repository import Repository
 from just_dna_marketplace.models.api import (
@@ -59,6 +60,7 @@ def _card(repo: Repository, row: sqlite3.Row, starred_by: Optional[int] = None) 
         benign_count=stats.benign_count if stats else 0,
     )
     starred = starred_by is not None and repo.is_starred(int(row["id"]), starred_by)
+    reviews = repo.review_summary(int(row["id"]))
     return ModuleCard(
         namespace=row["namespace"],
         name=row["name"],
@@ -82,6 +84,9 @@ def _card(repo: Repository, row: sqlite3.Row, starred_by: Optional[int] = None) 
         updated_at=row["updated_at"],
         starred_by_me=bool(starred),
         featured=_featured(repo, row),
+        review_count=reviews["review_count"],
+        avg_rating=reviews["avg_rating"],
+        curated=reviews["highlighted_count"] > 0,
     )
 
 
@@ -109,8 +114,22 @@ def _version_signed(row: sqlite3.Row) -> bool:
 
 
 def list_modules(
-    repo: Repository, *, page: int, per_page: int, starred_by: Optional[int] = None, **filters: object
+    repo: Repository,
+    *,
+    page: int,
+    per_page: int,
+    starred_by: Optional[int] = None,
+    group: Optional[str] = None,
+    test_pattern: str,
+    **filters: object,
 ) -> Page[ModuleCard]:
+    # A named group (all/featured/popular/new/test) is a preset over sort/featured/namespace-scope;
+    # it wins over those raw filters. An explicit `namespace` still reaches a test/sandbox space by
+    # exact name (so the exclusion the non-test groups apply is dropped in that case).
+    preset = groups.group_filters(group, repo, test_pattern)
+    if filters.get("namespace"):
+        preset.pop("exclude_namespaces", None)
+    filters.update(preset)
     rows, total = repo.search_modules(
         limit=per_page, offset=(page - 1) * per_page, **filters  # type: ignore[arg-type]
     )

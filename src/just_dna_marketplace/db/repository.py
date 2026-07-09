@@ -96,6 +96,36 @@ class Repository:
             (key,),
         ).fetchone()
 
+    def get_account(self, account_id: int) -> Optional[sqlite3.Row]:
+        """Full account row incl. the 0.8.0 profile fields (email/display_name/type)."""
+        return self.conn.execute(
+            "SELECT id, name, email, display_name, type FROM accounts WHERE id = ?", (account_id,)
+        ).fetchone()
+
+    def set_account_profile(
+        self, account_id: int, *, email: Optional[str] = None, display_name: Optional[str] = None
+    ) -> None:
+        """Self-service profile update. Only the fields passed are changed; an empty string clears a
+        field to NULL (so a user can remove an email/name)."""
+        sets: list[str] = []
+        params: list[Any] = []
+        for column, value in (("email", email), ("display_name", display_name)):
+            if value is not None:
+                sets.append(f"{column} = ?")
+                params.append(value or None)  # "" clears to NULL
+        if not sets:
+            return
+        params.append(account_id)
+        self.conn.execute(f"UPDATE accounts SET {', '.join(sets)} WHERE id = ?", params)
+        self.conn.commit()
+
+    def set_account_type(self, account_id: int, account_type: str) -> None:
+        """Set the account's `user`/`org` discriminator (admin/creation-time, not self-service)."""
+        self.conn.execute(
+            "UPDATE accounts SET type = ? WHERE id = ?", (account_type, account_id)
+        )
+        self.conn.commit()
+
     def namespaces_for_account(self, account_id: int) -> list[str]:
         """Every namespace the account belongs to (owner OR contributor) — feeds `Account.namespaces`
         and thus the publish membership check."""
@@ -179,6 +209,17 @@ class Repository:
         return self.conn.execute(
             "SELECT id, name FROM modules WHERE namespace = ? ORDER BY name", (namespace,)
         ).fetchall()
+
+    def distinct_module_namespaces(self) -> list[str]:
+        """Every namespace that has at least one published module. The source for classifying which
+        namespaces are 'test/sandbox' when scoping the listing groups (works even for a namespace
+        with no `namespaces` registry row, e.g. a seeded import)."""
+        return [
+            r["namespace"]
+            for r in self.conn.execute(
+                "SELECT DISTINCT namespace FROM modules ORDER BY namespace"
+            ).fetchall()
+        ]
 
     def delete_module(self, namespace: str, name: str) -> list[str]:
         """Hard-delete a module and cascade its versions + facet rows. Returns the versions removed
@@ -447,6 +488,81 @@ class Repository:
         ).fetchone()
         return row is not None
 
+    # ── Reviews / audits (0.8.0) ────────────────────────────────────────────────
+
+    def upsert_review(
+        self,
+        module_id: int,
+        version: str,
+        account_id: int,
+        *,
+        rating: int,
+        verdict: Optional[str],
+        notes: Optional[str],
+        now: str,
+    ) -> None:
+        """Create or replace the caller's review of a specific version (one per account per version).
+        Editing content leaves the owner's `highlighted` flag untouched (only the owner sets it)."""
+        self.conn.execute(
+            "INSERT INTO reviews(module_id, version, account_id, rating, verdict, notes, "
+            "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(module_id, version, account_id) DO UPDATE SET "
+            "rating = excluded.rating, verdict = excluded.verdict, notes = excluded.notes, "
+            "updated_at = excluded.updated_at",
+            (module_id, version, account_id, rating, verdict, notes, now, now),
+        )
+        self.conn.commit()
+
+    def delete_review(self, module_id: int, version: str, account_id: int) -> bool:
+        cur = self.conn.execute(
+            "DELETE FROM reviews WHERE module_id = ? AND version = ? AND account_id = ?",
+            (module_id, version, account_id),
+        )
+        self.conn.commit()
+        return cur.rowcount > 0
+
+    def set_review_highlight(
+        self, module_id: int, version: str, account_id: int, highlighted: bool
+    ) -> bool:
+        """Owner action: highlight/unhighlight one reviewer's review (SO accepted-answer style).
+        Returns False if there is no such review."""
+        cur = self.conn.execute(
+            "UPDATE reviews SET highlighted = ? WHERE module_id = ? AND version = ? "
+            "AND account_id = ?",
+            (int(highlighted), module_id, version, account_id),
+        )
+        self.conn.commit()
+        return cur.rowcount > 0
+
+    def list_reviews(self, module_id: int, version: Optional[str] = None) -> list[sqlite3.Row]:
+        """Reviews for a module (optionally one version), highlighted first, then newest. Joins the
+        reviewer's account name."""
+        where = "r.module_id = ?"
+        params: list[Any] = [module_id]
+        if version is not None:
+            where += " AND r.version = ?"
+            params.append(version)
+        return self.conn.execute(
+            f"SELECT r.*, a.name AS reviewer FROM reviews r JOIN accounts a ON a.id = r.account_id "
+            f"WHERE {where} ORDER BY r.highlighted DESC, r.updated_at DESC",
+            params,
+        ).fetchall()
+
+    def review_summary(self, module_id: int) -> dict[str, Any]:
+        """Module-level aggregate for the card: review count, average rating, and how many reviews
+        the owner has highlighted (`curated` when > 0)."""
+        row = self.conn.execute(
+            "SELECT COUNT(*) AS n, AVG(rating) AS avg_rating, "
+            "SUM(highlighted) AS highlighted FROM reviews WHERE module_id = ?",
+            (module_id,),
+        ).fetchone()
+        count = int(row["n"])
+        return {
+            "review_count": count,
+            "avg_rating": round(float(row["avg_rating"]), 2) if count else None,
+            "highlighted_count": int(row["highlighted"] or 0),
+        }
+
     # ── Search / list ─────────────────────────────────────────────────────────
 
     def search_modules(
@@ -461,6 +577,9 @@ class Repository:
         namespace: Optional[str] = None,
         featured: Optional[bool] = None,
         include_blacklisted: bool = False,
+        exclude_namespaces: Optional[list[str]] = None,
+        only_namespaces: Optional[list[str]] = None,
+        curated_only: bool = False,
         sort: str = "name",
         limit: int = 20,
         offset: int = 0,
@@ -469,7 +588,9 @@ class Repository:
 
         Blacklisted namespaces are hidden unless `include_blacklisted` or a specific `namespace`
         filter is given. `featured` modules float to the top of every sort; `featured=True`
-        restricts to them. Each row carries `featured`/`blacklisted` (from the namespaces table).
+        restricts to them. `exclude_namespaces` / `only_namespaces` scope the result to a set of
+        namespaces (used by the listing groups to hide or isolate test/sandbox spaces). Each row
+        carries `featured`/`blacklisted` (from the namespaces table).
         """
         where: list[str] = ["m.latest_version IS NOT NULL"]
         params: list[Any] = []
@@ -478,6 +599,18 @@ class Repository:
         if namespace:
             where.append("m.namespace = ?")
             params.append(namespace)
+        if only_namespaces is not None:
+            # An empty set means "nothing qualifies" (e.g. group=test with no test spaces) → no rows.
+            if not only_namespaces:
+                return [], 0
+            where.append(f"m.namespace IN ({','.join('?' * len(only_namespaces))})")
+            params.extend(only_namespaces)
+        if exclude_namespaces:
+            where.append(f"m.namespace NOT IN ({','.join('?' * len(exclude_namespaces))})")
+            params.extend(exclude_namespaces)
+        if curated_only:
+            # Curated = at least one owner-highlighted review (the `curated` listing group).
+            where.append("m.id IN (SELECT module_id FROM reviews WHERE highlighted = 1)")
         if featured:
             where.append("COALESCE(n.featured, 0) = 1")
         if q:

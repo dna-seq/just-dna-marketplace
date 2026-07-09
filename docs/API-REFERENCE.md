@@ -74,7 +74,7 @@ Publish/import `422.error` codes: `missing_spec_files`, `invalid_spec` (carries
 | 10 | POST | `/api/v1/modules/{ns}/{name}/versions` | bearer | Publish (multipart spec) |
 | 11 | POST | `/api/v1/modules/{ns}/{name}/versions/import` | bearer | Publish from zip/tar.gz archive |
 | 12 | POST | `/api/v1/modules/{ns}/{name}/versions/{v}/yank` | bearer | Yank / un-yank a version |
-| 13 | GET | `/api/v1/auth/whoami` | bearer | Identity + owned namespaces |
+| 13 | GET/PATCH | `/api/v1/auth/whoami` | bearer | Identity + owned namespaces; edit own profile |
 | 14 | POST | `/api/v1/auth/register` | install-id | Self-register → account + API key |
 | 15 | GET | `/api/v1/namespaces/{ns}` | — | Namespace availability |
 | 16 | POST | `/api/v1/namespaces` | bearer | Claim an available namespace |
@@ -99,9 +99,17 @@ List/search the catalog (one **card** per module, its latest non-yanked version)
 
 Query params: `q` (title/description substring), `category`, `gene`, `genome_build`, `owner`,
 `license` (exact facet matches), `namespace` (restrict to one namespace), `featured` (`true` →
-only featured), `include_blacklisted` (`true` → include hidden namespaces), `sort` = `name`
-(default) | `downloads` | `recent` | `stars` | `popular`, plus `page`, `per_page`. Facet filters
-match modules with a non-yanked version carrying that gene/category.
+only featured), `include_blacklisted` (`true` → include hidden namespaces), `group` (a tab preset —
+see below), `sort` = `name` (default) | `downloads` | `recent` | `stars` | `popular`, plus `page`,
+`per_page`. Facet filters match modules with a non-yanked version carrying that gene/category.
+
+**`group`** is a server-defined tab preset over the raw filters (a group wins over the equivalent
+`sort`/`featured`): `all` (everything), `featured` (`featured=true`), `curated` (has an
+owner-highlighted review — see reviews), `popular` (`sort=popular`), `new` (`sort=recent`), `test`. **Test/sandbox namespaces** — those matching the server-config
+`MARKETPLACE_TEST_NAMESPACE_PATTERN` (default `^(sandbox|test)([-_]|$)`) — are surfaced **only** under
+`group=test` and hidden from every other tab and the default listing; they stay reachable by an
+explicit `namespace=`. Membership is server-owned so all clients agree. Discover the tabs at
+`GET /api/v1/modules/groups`.
 
 `200 → Page<ModuleCard>`. **Featured** modules float to the top of every sort (card has
 `featured: bool`). **Blacklisted** namespaces are omitted by default — returned only with
@@ -128,6 +136,23 @@ called **with** a bearer token, `starred_by_me` reflects the caller; anonymous r
 
 Sort keys: `downloads` (module download total), `recent` (`updated_at`), `stars` (stargazer count),
 `popular` (blended `views + search_hits`).
+
+### 2a. `GET /api/v1/modules/groups`
+The listing tabs (groups) the catalog defines, for a UI to render. Anonymous. `200 →`
+
+```json
+[
+  {"key": "all", "label": "All", "description": "Everything published (test/sandbox spaces excluded)."},
+  {"key": "featured", "label": "Featured", "description": "Namespaces curated by the operators."},
+  {"key": "curated", "label": "Curated", "description": "Has an owner-highlighted review/audit."},
+  {"key": "popular", "label": "Popular", "description": "Most viewed, downloaded, and starred."},
+  {"key": "new", "label": "New", "description": "Most recently updated."},
+  {"key": "test", "label": "Test", "description": "Sandbox / test namespaces (hidden from other tabs)."}
+]
+```
+
+Pass a `key` as `?group=` on the listing (endpoint 2). Membership is server-owned policy, not the
+UI's — see the `group` param above.
 
 ### 3. `GET /api/v1/modules/lookup?digest=sha256:…`
 Find published versions whose `artifact.digest` matches (content-identity / "already published?"
@@ -242,6 +267,23 @@ double `PUT` keeps exactly one star; a `DELETE` on an unstarred module is a no-o
 Errors: `401`, `404 module_not_found`. Rate-limited (`social` bucket). Sort the catalog by count
 with `GET /api/v1/modules?sort=stars`.
 
+### 27. `GET /api/v1/modules/{ns}/{name}/reviews` · `.../versions/{v}/reviews`
+List reviews/audits — for the whole module, or one version. Anonymous. Highlighted reviews first.
+`200 → [{"reviewer","version","rating","verdict","notes","highlighted","created_at","updated_at"}]`.
+
+### 28. `PUT` / `DELETE /api/v1/modules/{ns}/{name}/versions/{v}/reviews`  *(bearer)*
+Post/update (`PUT`) or remove (`DELETE`) **the caller's** review of a version. **Anyone
+authenticated** — reviews are open, like a store. Body `{"rating": 1-5, "verdict":
+"verified|concerns|rejected"?, "notes"?}`; one per account per version (re-posting replaces it, and
+leaves the owner's highlight intact). Returns the version's current review list. Errors: `401`,
+`404 version_not_found`, `422` (rating out of range / bad verdict). Rate-limited (`social`).
+
+### 29. `PUT` / `DELETE .../versions/{v}/reviews/{reviewer}/highlight`  *(bearer — owner)*
+The namespace **owner** highlights (or un-highlights) a reviewer's review — SO accepted-answer style;
+any number may be highlighted. A highlighted review is what `?group=curated` and the card's
+`curated` flag key on. Returns the updated review list. Errors: `401`, `403 not_namespace_owner`,
+`404 review_not_found` (highlight) / `version_not_found`.
+
 ### 24. `GET /api/v1/namespaces/{ns}/members`  *(bearer)*
 List a namespace's members. Any **member** (owner or contributor) may read. `200 → {"namespace":
 "…", "members": [{"account": "alice", "role": "owner"}, {"account": "bob", "role": "contributor"}]}`.
@@ -262,9 +304,16 @@ namespaces. `200 → {"namespace","members":[…]}`. Errors: `401`, `403 not_nam
 owner). Global key/account revocation stays an ops-CLI action (`marketplace revoke-key` /
 `revoke-account`).
 
-### 13. `GET /api/v1/auth/whoami`  *(bearer)*
-`200 → {"account": "just-dna-seq", "namespaces": ["just-dna-seq"]}` — `namespaces` is every
-namespace the caller is a member of (owner or contributor). `401` on missing/invalid token.
+### 13. `GET` / `PATCH /api/v1/auth/whoami`  *(bearer)*
+`GET 200 → {"account": "antonkulaga", "namespaces": ["just-dna-seq"], "type": "user",
+"display_name": null, "email": null}` — `namespaces` is every namespace the caller is a member of
+(owner or contributor); `type` is the `user`|`org` discriminator; `email` is **private** (only ever
+returned here). `401` on missing/invalid token.
+
+`PATCH` edits the caller's own profile — body `{"email"?, "display_name"?}` (omitted fields
+unchanged, `""` clears a field). Returns the updated identity. `type` is **not** self-editable (set
+at account creation via `marketplace issue-key --type`). Errors: `401`, `422` (bad email),
+`409 email_taken` (another account already uses that email).
 
 ### 18. `POST /api/v1/auth/tokens`
 Optional JWT session. Body `{"api_key": "mk_live_…"}`. `200 → {"token": "<jwt>", "token_type":
@@ -305,9 +354,15 @@ digests are already in each module's `manifest.json`, so no client-side hashing.
 ### ModuleCard
 `namespace, name, title, description, icon, icon_set, color, logo_url, latest_version, genome_build,
 license, owner, stats: CardStats, downloads, stars, views, created_at, updated_at, starred_by_me,
-featured`. `stars`/`views` are counters; `starred_by_me` is true only when the request carried a
-bearer for an account that starred the module; `created_at` is the first-publish time,
-`updated_at` advances on every republish.
+featured, review_count, avg_rating, curated`. `stars`/`views` are counters; `starred_by_me` is true
+only when the request carried a bearer for an account that starred the module; `created_at` is the
+first-publish time, `updated_at` advances on every republish. `review_count`/`avg_rating` (null when
+unreviewed) aggregate reviews across versions; `curated` is true when the owner has highlighted at
+least one review.
+
+### Review
+`reviewer, version, rating (1-5), verdict (verified|concerns|rejected | null), notes, highlighted,
+created_at, updated_at`. Version-scoped; `highlighted` is set by the namespace owner.
 
 ### CardStats
 `variant_count, study_count, gene_count, genes: string[], categories: string[]`. In cards `genes`
@@ -321,7 +376,9 @@ changelog, manifest_url`. `downloads` is the per-version download count.
 `ModuleCard` fields + `readme: string`, `versions: VersionSummary[]`, `latest_manifest: ModuleManifest`.
 
 ### WhoAmI
-`account: string, namespaces: string[]` (every namespace the account is a member of).
+`account: string` (handle), `namespaces: string[]` (every namespace the account is a member of),
+`type: "user"|"org"`, `display_name: string|null`, `email: string|null` (private — only returned to
+the account itself).
 
 ### MemberList
 `namespace: string, members: [{account: string, role: "owner"|"contributor"}]`.

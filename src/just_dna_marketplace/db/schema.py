@@ -87,10 +87,29 @@ CREATE TABLE IF NOT EXISTS namespace_members (
     PRIMARY KEY (namespace, account_id)
 );
 
+-- Reviews/audits (0.8.0): marketplace-layer social data ABOUT a published version — never part of
+-- the module manifest (that stays immutable/content-addressed). Anyone authenticated posts one per
+-- (version, account); a namespace owner may `highlighted` the good ones (SO accepted-answer style),
+-- which is what the `curated` listing group keys on. `verdict` is the optional audit tier.
+CREATE TABLE IF NOT EXISTS reviews (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    module_id    INTEGER NOT NULL REFERENCES modules(id) ON DELETE CASCADE,
+    version      TEXT NOT NULL,
+    account_id   INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    rating       INTEGER NOT NULL,
+    verdict      TEXT,
+    notes        TEXT,
+    highlighted  INTEGER NOT NULL DEFAULT 0,
+    created_at   TEXT NOT NULL DEFAULT '',
+    updated_at   TEXT NOT NULL DEFAULT '',
+    UNIQUE (module_id, version, account_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_versions_module ON versions(module_id);
 CREATE INDEX IF NOT EXISTS idx_version_genes ON version_genes(gene);
 CREATE INDEX IF NOT EXISTS idx_version_categories ON version_categories(category);
 CREATE INDEX IF NOT EXISTS idx_namespace_members_account ON namespace_members(account_id);
+CREATE INDEX IF NOT EXISTS idx_reviews_module ON reviews(module_id);
 """
 
 
@@ -117,10 +136,23 @@ def _migrate(conn: sqlite3.Connection) -> None:
     acct_cols = {row["name"] for row in conn.execute("PRAGMA table_info(accounts)").fetchall()}
     if "install_id" not in acct_cols:
         conn.execute("ALTER TABLE accounts ADD COLUMN install_id TEXT")
-    # One account per install-id (NULLs — admin-created accounts — are exempt).
+    # Account profile (0.8.0): `email` (private contact/identity, not yet an auth factor),
+    # `display_name` (human name, distinct from the `name` handle), and a GitHub-style `type`
+    # discriminator (`user`|`org`) so a single identity primitive can be a person or an organization.
+    if "email" not in acct_cols:
+        conn.execute("ALTER TABLE accounts ADD COLUMN email TEXT")
+    if "display_name" not in acct_cols:
+        conn.execute("ALTER TABLE accounts ADD COLUMN display_name TEXT")
+    if "type" not in acct_cols:
+        conn.execute("ALTER TABLE accounts ADD COLUMN type TEXT NOT NULL DEFAULT 'user'")
+    # One account per install-id / per email (NULLs are exempt — admin-made or profile-less accounts).
     conn.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_install_id "
         "ON accounts(install_id) WHERE install_id IS NOT NULL"
+    )
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_email "
+        "ON accounts(email) WHERE email IS NOT NULL"
     )
 
     ns_cols = {row["name"] for row in conn.execute("PRAGMA table_info(namespaces)").fetchall()}

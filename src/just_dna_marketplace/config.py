@@ -63,6 +63,12 @@ class Settings(BaseSettings):
     rate_search_per_min: float = 60
     rate_social_per_min: float = 30  # star/unstar toggles (0.6.0)
 
+    # Listing groups (0.8.0). Namespaces whose name matches this regex are classified as
+    # "test/sandbox" — surfaced only under `?group=test` and hidden from every other tab (`all`,
+    # `featured`, `popular`, `new`). Server-owned policy (not a client-supplied regex) so all
+    # consumers agree on membership; namespace names are hyphen-delimited (identity rules).
+    test_namespace_pattern: str = r"^(sandbox|test)([-_]|$)"
+
     # Optional Ed25519 artifact signing (SPEC §5). When `signing_key` points at an Ed25519 private
     # key PEM, the server signs each published version's `artifact.digest` and the public key is
     # served at `GET /api/v1/pubkey` for clients to pin. Unset (default) → signing off, unsigned
